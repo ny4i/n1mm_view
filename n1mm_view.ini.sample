@@ -26,6 +26,9 @@ DATA_DWELL_TIME = 60
 HEADLESS_DWELL_TIME = 120
 LOG_LEVEL = INFO
 LOGO_FILENAME = /home/pi/wfda_logo.png
+# MULTS controls which multiplier set to use for the map display.
+# Valid values: SECTIONS (ARRL Field Day sections) or STATES (US state abbreviations)
+MULTS = SECTIONS
 
 [EVENT INFO]
 NAME = Field Day

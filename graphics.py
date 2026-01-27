@@ -241,7 +241,8 @@ def qso_table(size, qsos):
         return None, (0, 0)
 
     count = 0
-    cells = [['Time', 'Call', 'Band', 'Mode', 'Operator', 'Section']] #, 'Station']]
+    mult_header = 'State' if config.MULTS == 'STATES' else 'Section'
+    cells = [['Time', 'Call', 'Band', 'Mode', 'Operator', mult_header]] #, 'Station']]
     
     for d in qsos[:10]:
         cells.append( ['%s' % datetime.datetime.utcfromtimestamp(d[0]).strftime('%m-%d-%y %Tz') # Time
@@ -619,7 +620,7 @@ def draw_map(size, qsos_by_section):
     ax.add_feature(cfeature.LAND, color='#113311')
 
     ax.coastlines('50m')
-    ax.annotate('Sections Worked', xy=(0.5, 1), xycoords='axes fraction', ha='center', va='top',
+    ax.annotate(get_mult_title(), xy=(0.5, 1), xycoords='axes fraction', ha='center', va='top',
                 color='white', size=48, weight='bold')
     
     ax.text(0.83, 0, datetime.datetime.utcnow().strftime("%d %b %Y %H:%M %Zz"),
@@ -631,7 +632,8 @@ def draw_map(size, qsos_by_section):
     colors = [delta * i for i in range(num_colors+1)]
     color_palette = matplotlib.cm.viridis(colors)
 
-    for section_name in CONTEST_SECTIONS.keys():
+    mult_dict = get_mult_dictionary()
+    for section_name in mult_dict.keys():
         qsos = qsos_by_section.get(section_name)
         if qsos is None:
             qsos = 0
@@ -645,6 +647,9 @@ def draw_map(size, qsos_by_section):
                 break
 
         shape_file_name = 'shapes/{}.shp'.format(section_name)
+        if not os.path.exists(shape_file_name):
+            logging.warning('Shapefile not found: %s, skipping' % shape_file_name)
+            continue
         reader = shapereader.Reader(shape_file_name)
         shapes = reader.records()
         while True:

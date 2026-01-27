@@ -15,6 +15,7 @@ import sys
 import time
 
 from config import Config
+import constants
 import dataaccess
 import graphics
 
@@ -96,9 +97,12 @@ def load_data(size, q, last_qso_timestamp):
             # load QSO rates per Hour by Band
             qsos_per_hour, qsos_per_band = dataaccess.get_qsos_per_hour_per_band(cursor)
 
-        # load QSOs by Section
+        # load QSOs by Section/State
         # This has to be done even if no new QSO to advance gray line and since the map is always drawn.
-        qsos_by_section = dataaccess.get_qsos_by_section(cursor)
+        if config.MULTS == 'STATES':
+            qsos_by_section = dataaccess.get_qsos_by_state(cursor)
+        else:
+            qsos_by_section = dataaccess.get_qsos_by_section(cursor)
 
         q.put((CRAWL_MESSAGE, 0, ''))
 

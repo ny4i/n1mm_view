@@ -87,6 +87,12 @@ class Config(metaclass = Singleton):
         
         self.DATABASE_FILENAME = cfg.get('GLOBAL','DATABASE_FILENAME',fallback='n1mm_view.db')
         logging.info ('Using database file %s' % (self.DATABASE_FILENAME))
+
+        self.MULTS = cfg.get('GLOBAL', 'MULTS', fallback='SECTIONS').upper()
+        if self.MULTS not in ('SECTIONS', 'STATES'):
+            logging.warning('Invalid MULTS value "%s", defaulting to SECTIONS' % self.MULTS)
+            self.MULTS = 'SECTIONS'
+        logging.info('MULTS mode set to %s' % self.MULTS)
         
         self.LOGO_FILENAME = cfg.get('GLOBAL','LOGO_FILENAME',fallback='logo.png')
         if not os.path.exists(self.LOGO_FILENAME):

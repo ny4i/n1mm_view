@@ -15,6 +15,7 @@ import time
 #import subprocess
 
 from config import Config
+import constants
 import dataaccess
 import graphics
 
@@ -103,8 +104,11 @@ def create_images(size, image_dir, last_qso_timestamp):
             # load last 10 qsos
             qsos = dataaccess.get_last_N_qsos(cursor, 10) # Note this returns last 10 qsos in reverse order so oldest is first
 
-        # load QSOs by Section -- always load this since map is always drawn
-        qsos_by_section = dataaccess.get_qsos_by_section(cursor)
+        # load QSOs by Section/State -- always load this since map is always drawn
+        if config.MULTS == 'STATES':
+            qsos_by_section = dataaccess.get_qsos_by_state(cursor)
+        else:
+            qsos_by_section = dataaccess.get_qsos_by_section(cursor)
         logging.debug("get_qsos_by_section returned %s qsos" % (qsos_by_section))
 
         logging.info('load data done')
@@ -224,7 +228,7 @@ def create_images(size, image_dir, last_qso_timestamp):
           graphics.save_image(image_data, image_size, filename)
           gc.collect()
        else:
-          logging.debug('image_data was None when drawing sections')
+          logging.debug('image_data was None when drawing map')
 
     except Exception as e:
         logging.exception(e)
@@ -365,8 +369,8 @@ def write_index_html(image_dir):
   <button class="nav-btn prev" id="prev">&lsaquo;</button>
   <button class="nav-btn next" id="next">&rsaquo;</button>
 
-  <div class="slide"><h2>Sections Worked Map</h2>
-    <img src="sections_worked_map.png" alt="Sections Worked Map"></div>
+  <div class="slide"><h2>{constants.get_mult_title()} Map</h2>
+    <img src="sections_worked_map.png" alt="{constants.get_mult_title()} Map"></div>
   <div class="slide"><h2>Recent QSOs</h2>
     <img src="last_qso_table.png" alt="Last QSOs Table"></div>
   <div class="slide"><h2>QSO Summary</h2>

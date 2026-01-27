@@ -14,6 +14,7 @@ import time
 import xml.parsers.expat
 
 from config import Config
+import constants
 import dataaccess
 
 __author__ = 'Jeffrey B. Otterson, N1KDO'
@@ -189,14 +190,20 @@ def process_message(parser, db, cursor, operators, stations, message, seen):
         exchange = data.get('exchange1', '').upper()
         section = data.get('section', '').upper()
         comment = data.get('comment', '')
-        
+
+        # Extract state from section when in STATES multiplier mode
+        if config.MULTS == 'STATES':
+            state = section
+        else:
+            state = ''
+
         # convert qso_timestamp to datetime object
         timestamp = convert_timestamp(qso_timestamp)
 
         dataaccess.record_contact_combined(db, cursor, operators, stations,
                                            timestamp, mycall, band, mode, operator, station,
                                            rx_freq, tx_freq, callsign, rst_sent, rst_recv,
-                                           exchange, section, comment, qso_id)
+                                           exchange, section, comment, qso_id, state=state)
     elif message_type == 'RadioInfo':
         logging.debug('Received RadioInfo message')
     elif message_type == 'contactdelete':

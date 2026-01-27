@@ -46,6 +46,7 @@ def create_tables(db, cursor):
                    '     rst_recv char(3),\n'
                    '     exchange char(4),\n'
                    '     section char(4),\n'
+                   '     state char(4),\n'
                    '     comment TEXT,\n'
                    '     qso_id  char(32) PRIMARY KEY NOT NULL);')  # this is primary key to speed up Update & Delete
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_band_id ON qso_log(band_id);')
@@ -53,15 +54,25 @@ def create_tables(db, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_operator_id ON qso_log(operator_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_station_id ON qso_log(station_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_section ON qso_log(section);')
+    cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_state ON qso_log(state);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_qso_id ON qso_log(qso_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_qso_timestamp ON qso_log(timestamp);')
+
+    # Migration: add state column to existing databases
+    try:
+        cursor.execute('ALTER TABLE qso_log ADD COLUMN state char(4);')
+        db.commit()
+        logging.info('Added state column to qso_log table')
+    except Exception:
+        pass  # column already exists
+
     db.commit()
 
 
 def record_contact_combined(db, cursor, operators, stations,
                             timestamp, mycall, band, mode, operator, station,
                             rx_freq, tx_freq, callsign, rst_sent, rst_recv,
-                            exchange, section, comment, qso_id):
+                            exchange, section, comment, qso_id, state=''):
     """
     record the results of a contact_message
     """
@@ -84,10 +95,10 @@ def record_contact_combined(db, cursor, operators, stations,
         cursor.execute(
             'insert or replace into qso_log \n'
             '    (timestamp, mycall, band_id, mode_id, operator_id, station_id , rx_freq, tx_freq, \n'
-            '     callsign, rst_sent, rst_recv, exchange, section, comment, qso_id)\n'
-            '    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
+            '     callsign, rst_sent, rst_recv, exchange, section, state, comment, qso_id)\n'
+            '    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
             (calendar.timegm(timestamp), mycall, band_id, mode_id, operator_id, station_id, rx_freq, tx_freq,
-             callsign, rst_sent, rst_recv, exchange, section, comment, str(qso_id)))
+             callsign, rst_sent, rst_recv, exchange, section, state, comment, str(qso_id)))
 
         db.commit()
     except Exception as err:
@@ -97,7 +108,7 @@ def record_contact_combined(db, cursor, operators, stations,
 def record_contact(db, cursor, operators, stations,
                    timestamp, mycall, band, mode, operator, station,
                    rx_freq, tx_freq, callsign, rst_sent, rst_recv,
-                   exchange, section, comment, qso_id):
+                   exchange, section, comment, qso_id, state=''):
     """
     record the results of a contact_message
     """
@@ -120,10 +131,10 @@ def record_contact(db, cursor, operators, stations,
         cursor.execute(
             'insert into qso_log \n'
             '    (timestamp, mycall, band_id, mode_id, operator_id, station_id , rx_freq, tx_freq, \n'
-            '     callsign, rst_sent, rst_recv, exchange, section, comment, qso_id)\n'
-            '    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
+            '     callsign, rst_sent, rst_recv, exchange, section, state, comment, qso_id)\n'
+            '    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
             (calendar.timegm(timestamp), mycall, band_id, mode_id, operator_id, station_id, rx_freq, tx_freq,
-             callsign, rst_sent, rst_recv, exchange, section, comment, qso_id))
+             callsign, rst_sent, rst_recv, exchange, section, state, comment, qso_id))
 
         db.commit()
     except Exception as err:
@@ -133,7 +144,7 @@ def record_contact(db, cursor, operators, stations,
 def update_contact(db, cursor, operators, stations,
                    timestamp, mycall, band, mode, operator, station,
                    rx_freq, tx_freq, callsign, rst_sent, rst_recv,
-                   exchange, section, comment, qso_id):
+                   exchange, section, comment, qso_id, state=''):
     """
     record the results of a contact_message
     """
@@ -156,10 +167,10 @@ def update_contact(db, cursor, operators, stations,
         cursor.execute(
             'update qso_log \n'
             '    set timestamp=?, mycall=?, band_id=?, mode_id=?, operator_id=?, station_id=? , rx_freq=?, tx_freq=?, \n'
-            '     callsign=?, rst_sent=?, rst_recv=?, exchange=?, section=?, comment=? \n'
+            '     callsign=?, rst_sent=?, rst_recv=?, exchange=?, section=?, state=?, comment=? \n'
             ' where qso_id = ?;',
             (calendar.timegm(timestamp), mycall, band_id, mode_id, operator_id, station_id, rx_freq, tx_freq,
-             callsign, rst_sent, rst_recv, exchange, section, comment, qso_id))
+             callsign, rst_sent, rst_recv, exchange, section, state, comment, qso_id))
 
         db.commit()
     except Exception as err:
@@ -320,6 +331,16 @@ def get_qsos_by_section(cursor):
         qsos_by_section[row[0]] = row[1]
         logging.debug(f'Section {row[0]} {row[1]}')
     return qsos_by_section
+
+
+def get_qsos_by_state(cursor):
+    logging.debug('Load QSOs by State')
+    qsos_by_state = {}
+    cursor.execute('SELECT state, COUNT(state) AS qsos FROM qso_log WHERE state != \'\' GROUP BY state;')
+    for row in cursor:
+        qsos_by_state[row[0]] = row[1]
+        logging.debug(f'State {row[0]} {row[1]}')
+    return qsos_by_state
 
 
 def get_last_N_qsos(cursor, nQSOCount):
