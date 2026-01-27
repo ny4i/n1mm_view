@@ -275,6 +275,14 @@ def get_qso_classes(cursor):
     return exchanges
 
 
+def get_qso_categories(cursor):
+    cursor.execute("SELECT COUNT(*), SUBSTR(exchange, LENGTH(exchange), 1) as category FROM qso_log GROUP BY category;")
+    categories = []
+    for row in cursor:
+        categories.append((row[0], row[1]))
+    return categories
+
+
 def get_qsos_per_hour_per_band(cursor):
     qsos_per_hour = []
     qsos_by_band = [0] * constants.Bands.count()

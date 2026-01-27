@@ -70,6 +70,9 @@ def main():
         # load qso exchange data: what class are the other stations?
         qso_classes = dataaccess.get_qso_classes(cursor)
 
+        # load qso exchange data by category (letter only)
+        qso_categories = dataaccess.get_qso_categories(cursor)
+
         # load QSOs by Section
         qsos_by_section = dataaccess.get_qsos_by_section(cursor)
 
@@ -99,6 +102,8 @@ def main():
         graphics.save_image(image_data, image_size, 'images/qso_bands_graph.png')
         image_data, image_size = graphics.qso_classes_graph(size, qso_classes)
         graphics.save_image(image_data, image_size, 'images/qso_classes_graph.png')
+        image_data, image_size = graphics.qso_categories_graph(size, qso_categories)
+        graphics.save_image(image_data, image_size, 'images/qso_categories_graph.png')
         image_data, image_size = graphics.qso_modes_graph(size, qso_band_modes)
         graphics.save_image(image_data, image_size, 'images/qso_modes_graph.png')
         image_data, image_size = graphics.qso_rates_graph(size, qsos_per_hour)

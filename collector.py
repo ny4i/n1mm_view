@@ -160,6 +160,7 @@ def process_message(parser, db, cursor, operators, stations, message, seen):
     """
     message = compress_message(message)
     data = parser.parse(message)
+    logging.debug(f'{data}')
     message_type = data.get('__messagetype__', '')
     logging.debug(f'Received UDP message {message_type}')
     if message_type in ['contactinfo', 'contactreplace']:

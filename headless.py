@@ -26,7 +26,7 @@ config = Config()
 #logging.basicConfig(format='%(asctime)s.%(msecs)03d %(levelname)-8s %(module)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S',
 #                    level=config.LOG_LEVEL)
 #logging.Formatter.converter = time.gmtime
-
+logger = logging.getLogger(__name__) 
 logging.debug('Getting started here in headless.py')
 
 def makePNGTitle(image_dir, title):
@@ -50,6 +50,7 @@ def create_images(size, image_dir, last_qso_timestamp):
     qsos_per_hour = []
     qsos_by_section = {}
     qso_classes = []
+    qso_categories = []
     qsos = []
 
     db = None
@@ -96,11 +97,15 @@ def create_images(size, image_dir, last_qso_timestamp):
             # load qso exchange data: what class are the other stations?
             qso_classes = dataaccess.get_qso_classes(cursor)
 
-            # load QSOs by Section
-            qsos_by_section = dataaccess.get_qsos_by_section(cursor)
-            
+            # load qso exchange data by category (letter only)
+            qso_categories = dataaccess.get_qso_categories(cursor)
+
             # load last 10 qsos
             qsos = dataaccess.get_last_N_qsos(cursor, 10) # Note this returns last 10 qsos in reverse order so oldest is first
+
+        # load QSOs by Section -- always load this since map is always drawn
+        qsos_by_section = dataaccess.get_qsos_by_section(cursor)
+        logging.debug("get_qsos_by_section returned %s qsos" % (qsos_by_section))
 
         logging.info('load data done')
     except sqlite3.OperationalError as error:
@@ -185,7 +190,15 @@ def create_images(size, image_dir, last_qso_timestamp):
                graphics.save_image(image_data, image_size, filename)
         except Exception as e:
             logging.exception(e)
-        
+
+        try:
+            image_data, image_size = graphics.qso_categories_graph(size, qso_categories)
+            if image_data is not None:
+               filename = makePNGTitle(image_dir, 'qso_categories_graph')
+               graphics.save_image(image_data, image_size, filename)
+        except Exception as e:
+            logging.exception(e)
+
         try:
             image_data, image_size = graphics.qso_rates_graph(size, qsos_per_hour)
             if image_data is not None:
@@ -210,6 +223,8 @@ def create_images(size, image_dir, last_qso_timestamp):
           filename = makePNGTitle(image_dir, 'sections_worked_map')
           graphics.save_image(image_data, image_size, filename)
           gc.collect()
+       else:
+          logging.debug('image_data was None when drawing sections')
 
     except Exception as e:
         logging.exception(e)
@@ -226,6 +241,248 @@ def create_images(size, image_dir, last_qso_timestamp):
     return last_qso_time
 
 
+def write_index_html(image_dir):
+    """Write an index.html page to the image directory for web viewing."""
+    event_name = config.EVENT_NAME
+    dwell = config.DISPLAY_DWELL_TIME
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>N1MM View — {event_name}</title>
+<style>
+  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }}
+  header {{
+    background: #16213e;
+    padding: 0.6rem 1rem;
+    text-align: center;
+    border-bottom: 3px solid #0f3460;
+    flex-shrink: 0;
+  }}
+  header h1 {{
+    font-size: 1.25rem;
+    color: #e94560;
+  }}
+  .carousel {{
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }}
+  .slide {{
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+  }}
+  .slide.active {{
+    opacity: 1;
+    pointer-events: auto;
+  }}
+  .slide h2 {{
+    font-size: 1rem;
+    padding: 0.4rem 0;
+    color: #a0a0b8;
+    flex-shrink: 0;
+  }}
+  .slide img {{
+    max-width: 95%;
+    max-height: calc(100vh - 7rem);
+    object-fit: contain;
+  }}
+  .nav-btn {{
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(15, 52, 96, 0.7);
+    color: #e0e0e0;
+    border: none;
+    font-size: 2rem;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }}
+  .nav-btn:hover {{ background: rgba(15, 52, 96, 0.95); }}
+  .nav-btn.prev {{ left: 0.5rem; }}
+  .nav-btn.next {{ right: 0.5rem; }}
+  .dots {{
+    display: flex;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }}
+  .dot {{
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #0f3460;
+    cursor: pointer;
+    transition: background 0.3s;
+  }}
+  .dot.active {{ background: #e94560; }}
+  footer {{
+    text-align: center;
+    padding: 0.3rem;
+    font-size: 0.7rem;
+    color: #606080;
+    flex-shrink: 0;
+  }}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>{event_name}</h1>
+</header>
+
+<div class="carousel" id="carousel">
+  <button class="nav-btn prev" id="prev">&lsaquo;</button>
+  <button class="nav-btn next" id="next">&rsaquo;</button>
+
+  <div class="slide"><h2>Sections Worked Map</h2>
+    <img src="sections_worked_map.png" alt="Sections Worked Map"></div>
+  <div class="slide"><h2>Recent QSOs</h2>
+    <img src="last_qso_table.png" alt="Last QSOs Table"></div>
+  <div class="slide"><h2>QSO Summary</h2>
+    <img src="qso_summary_table.png" alt="QSO Summary Table"></div>
+  <div class="slide"><h2>QSO Rates</h2>
+    <img src="qso_rates_table.png" alt="QSO Rates Table"></div>
+  <div class="slide"><h2>QSO Rate Over Time</h2>
+    <img src="qso_rates_graph.png" alt="QSO Rates Graph"></div>
+  <div class="slide"><h2>QSOs by Operator</h2>
+    <img src="qso_operators_graph.png" alt="QSO Operators Pie Chart"></div>
+  <div class="slide"><h2>Operator Totals</h2>
+    <img src="qso_operators_table.png" alt="QSO Operators Table"></div>
+  <div class="slide"><h2>All Operator Stats</h2>
+    <img src="qso_operators_table_all.png" alt="QSO Operators Table All"></div>
+  <div class="slide"><h2>QSOs by Station</h2>
+    <img src="qso_stations_graph.png" alt="QSO Stations Pie Chart"></div>
+  <div class="slide"><h2>QSOs by Band</h2>
+    <img src="qso_bands_graph.png" alt="QSO Bands Pie Chart"></div>
+  <div class="slide"><h2>QSOs by Mode</h2>
+    <img src="qso_modes_graph.png" alt="QSO Modes Pie Chart"></div>
+  <div class="slide"><h2>QSOs by Class</h2>
+    <img src="qso_classes_graph.png" alt="QSO Classes Pie Chart"></div>
+  <div class="slide"><h2>QSOs by Category</h2>
+    <img src="qso_categories_graph.png" alt="QSO Categories Pie Chart"></div>
+</div>
+
+<div class="dots" id="dots"></div>
+
+<footer>
+  Powered by n1mm_view &mdash; N1KDO &amp; NY4I
+</footer>
+
+<script>
+(function() {{
+  var slides = document.querySelectorAll('.slide');
+  var dotsC = document.getElementById('dots');
+  var cur = 0;
+  var dwell = {dwell} * 1000;
+  var timer;
+
+  // build dots
+  for (var i = 0; i < slides.length; i++) {{
+    var d = document.createElement('span');
+    d.className = 'dot';
+    d.dataset.i = i;
+    d.addEventListener('click', function() {{ go(+this.dataset.i); }});
+    dotsC.appendChild(d);
+  }}
+  var dots = dotsC.querySelectorAll('.dot');
+
+  function show(n) {{
+    slides[cur].classList.remove('active');
+    dots[cur].classList.remove('active');
+    cur = (n + slides.length) % slides.length;
+    slides[cur].classList.add('active');
+    dots[cur].classList.add('active');
+  }}
+
+  function go(n) {{
+    show(n);
+    resetTimer();
+  }}
+
+  function advance() {{
+    show(cur + 1);
+    // reload images when we wrap around to bust cache
+    if (cur === 0) {{
+      var t = Date.now();
+      slides.forEach(function(s) {{
+        var img = s.querySelector('img');
+        if (img) img.src = img.src.split('?')[0] + '?t=' + t;
+      }});
+    }}
+  }}
+
+  function resetTimer() {{
+    clearInterval(timer);
+    timer = setInterval(advance, dwell);
+  }}
+
+  document.getElementById('prev').addEventListener('click', function() {{ go(cur - 1); }});
+  document.getElementById('next').addEventListener('click', function() {{ go(cur + 1); }});
+
+  // keyboard
+  document.addEventListener('keydown', function(e) {{
+    if (e.key === 'ArrowLeft') go(cur - 1);
+    else if (e.key === 'ArrowRight') go(cur + 1);
+  }});
+
+  // swipe
+  var x0 = null;
+  var el = document.getElementById('carousel');
+  el.addEventListener('touchstart', function(e) {{ x0 = e.touches[0].clientX; }}, {{passive: true}});
+  el.addEventListener('touchend', function(e) {{
+    if (x0 === null) return;
+    var dx = e.changedTouches[0].clientX - x0;
+    if (Math.abs(dx) > 40) go(cur + (dx < 0 ? 1 : -1));
+    x0 = null;
+  }});
+
+  show(0);
+  resetTimer();
+}})();
+</script>
+
+</body>
+</html>'''
+    index_path = f'{image_dir}/index.html'
+    try:
+        with open(index_path, 'w') as f:
+            f.write(html)
+        logging.info('Wrote %s' % index_path)
+    except Exception as e:
+        logging.exception(e)
+
+
 def main():
     logging.info('headless startup...')
     size = (1280, 1024)
@@ -239,7 +496,8 @@ def main():
             os.makedirs(config.IMAGE_DIR)
         if not os.path.exists(config.IMAGE_DIR):
             sys.exit('Image %s directory could not be created' % config.IMAGE_DIR)
-       
+        write_index_html(config.IMAGE_DIR)
+
     logging.info('creating world...')
 #    base_map = graphics.create_map()
 

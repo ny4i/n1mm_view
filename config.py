@@ -75,10 +75,14 @@ class Config(metaclass = Singleton):
         # If rather than call the class function, logging was instantiated as logger (accessible to all) then it could just use setLevel, but that is a bigger refactor.
         
         logging.basicConfig( format=LOG_FORMAT, datefmt='%Y-%m-%d %H:%M:%S'
-                    ,level=self.LOG_LEVEL 
+                    ,level=self.LOG_LEVEL
                     ,force = True
                    )
-        
+
+        # Suppress noisy third-party library logging
+        for lib in ['matplotlib', 'PIL', 'cartopy', 'pygame', 'fiona', 'shapely', 'pyproj']:
+            logging.getLogger(lib).setLevel(logging.WARNING)
+
         logging.info ('Reading config file @ %s' % (readCFGName))
         
         self.DATABASE_FILENAME = cfg.get('GLOBAL','DATABASE_FILENAME',fallback='n1mm_view.db')

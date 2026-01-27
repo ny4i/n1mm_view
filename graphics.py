@@ -219,6 +219,20 @@ def qso_classes_graph(size, qso_classes):
         values.append(d[0])
     return make_pie(size, values, labels, "QSOs by Class")
 
+def qso_categories_graph(size, qso_categories):
+    """
+    create the QSOs by Category pie chart
+    """
+    if qso_categories is None or len(qso_categories) == 0:
+        return None, (0, 0)
+    qso_categories = sorted(qso_categories, key=lambda x: x[0], reverse=True)
+    labels = []
+    values = []
+    for d in qso_categories:
+        labels.append(CATEGORY_NAMES.get(d[1], d[1]))
+        values.append(d[0])
+    return make_pie(size, values, labels, "QSOs by Category")
+
 def qso_table(size, qsos):
     """
     create the a table of the qso log

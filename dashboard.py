@@ -33,9 +33,10 @@ QSO_STATIONS_PIE_INDEX = 5
 QSO_BANDS_PIE_INDEX = 6
 QSO_MODES_PIE_INDEX = 7
 QSO_CLASSES_PIE_INDEX = 8
-QSO_RATE_CHART_IMAGE_INDEX = 9
-SECTIONS_WORKED_MAP_INDEX = 10
-IMAGE_COUNT = 11
+QSO_CATEGORIES_PIE_INDEX = 9
+QSO_RATE_CHART_IMAGE_INDEX = 10
+SECTIONS_WORKED_MAP_INDEX = 11
+IMAGE_COUNT = 12
 
 IMAGE_MESSAGE = 1
 CRAWL_MESSAGE = 2
@@ -85,6 +86,9 @@ def load_data(size, q, last_qso_timestamp):
 
             # load qso exchange data: what class are the other stations?
             qso_classes = dataaccess.get_qso_classes(cursor)
+
+            # load qso exchange data by category (letter only)
+            qso_categories = dataaccess.get_qso_categories(cursor)
 
             # load QSOs per Hour by Operator
             operator_qso_rates = dataaccess.get_qsos_per_hour_per_operator(cursor, last_qso_time)
@@ -153,6 +157,11 @@ def load_data(size, q, last_qso_timestamp):
         try:
             image_data, image_size = graphics.qso_classes_graph(size, qso_classes)
             enqueue_image(q, QSO_CLASSES_PIE_INDEX, image_data, image_size)
+        except Exception as e:
+            logging.exception(e)
+        try:
+            image_data, image_size = graphics.qso_categories_graph(size, qso_categories)
+            enqueue_image(q, QSO_CATEGORIES_PIE_INDEX, image_data, image_size)
         except Exception as e:
             logging.exception(e)
         try:

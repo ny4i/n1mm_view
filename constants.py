@@ -162,3 +162,20 @@ CONTEST_SECTIONS = {
     'WWA': 'Western Washington',
     'WY': 'Wyoming',
 }
+
+# Category letter descriptions for exchange classes.
+# WFD and ARRL FD letters are unique to each other so both can live here.
+CATEGORY_NAMES = {
+    # Winter Field Day
+    'H': 'H - Home',
+    'I': 'I - Indoor',
+    'O': 'O - Outdoor',
+    'M': 'M - Mobile',
+    # ARRL Field Day
+    'A': 'A - Club/Portable',
+    'B': 'B - 1-2 Person Portable',
+    'C': 'C - Mobile',
+    'D': 'D - Home',
+    'E': 'E - Home/Emerg Power',
+    'F': 'F - EOC',
+}
