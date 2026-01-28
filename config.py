@@ -136,3 +136,12 @@ class Config(metaclass = Singleton):
         self.POST_FILE_COMMAND = cfg.get('HEADLESS INFO','POST_FILE_COMMAND', fallback=None)
         self.VIEW_FONT = cfg.getint('FONT INFO','VIEW_FONT',fallback=64)
         self.BIGGER_FONT = cfg.getint('FONT INFO','BIGGER_FONT',fallback=180)
+
+        # Feature toggles - new features default to False to preserve original behavior
+        self.SHOW_RADIO_INFO = cfg.getboolean('FEATURES', 'SHOW_RADIO_INFO', fallback=False)
+        self.SHOW_MULT_PROGRESS = cfg.getboolean('FEATURES', 'SHOW_MULT_PROGRESS', fallback=False)
+        self.SHOW_MULT_REMAINING = cfg.getboolean('FEATURES', 'SHOW_MULT_REMAINING', fallback=False)
+        self.SHOW_MULT_ALERT = cfg.getboolean('FEATURES', 'SHOW_MULT_ALERT', fallback=False)
+        self.SHOW_OPERATOR_LEADERBOARD = cfg.getboolean('FEATURES', 'SHOW_OPERATOR_LEADERBOARD', fallback=False)
+        logging.info('Feature toggles: RADIO_INFO=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, OPERATOR_LEADERBOARD=%s',
+                     self.SHOW_RADIO_INFO, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_OPERATOR_LEADERBOARD)

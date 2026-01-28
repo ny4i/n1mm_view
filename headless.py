@@ -237,13 +237,41 @@ def create_images(size, image_dir, last_qso_timestamp):
     except Exception as e:
         logging.exception(e)
 
-    try:
-        image_data, image_size = graphics.draw_radio_info(size, radio_info)
-        if image_data is not None:
-            filename = makePNGTitle(image_dir, 'radio_info')
-            graphics.save_image(image_data, image_size, filename)
-    except Exception as e:
-        logging.exception(e)
+    if config.SHOW_RADIO_INFO:
+        try:
+            image_data, image_size = graphics.draw_radio_info(size, radio_info)
+            if image_data is not None:
+                filename = makePNGTitle(image_dir, 'radio_info')
+                graphics.save_image(image_data, image_size, filename)
+        except Exception as e:
+            logging.exception(e)
+
+    if config.SHOW_MULT_PROGRESS:
+        try:
+            image_data, image_size = graphics.draw_mults_progress(size, qsos_by_section)
+            if image_data is not None:
+                filename = makePNGTitle(image_dir, 'mults_progress')
+                graphics.save_image(image_data, image_size, filename)
+        except Exception as e:
+            logging.exception(e)
+
+    if config.SHOW_MULT_REMAINING:
+        try:
+            image_data, image_size = graphics.draw_mults_remaining(size, qsos_by_section)
+            if image_data is not None:
+                filename = makePNGTitle(image_dir, 'mults_remaining')
+                graphics.save_image(image_data, image_size, filename)
+        except Exception as e:
+            logging.exception(e)
+
+    if data_updated and config.SHOW_OPERATOR_LEADERBOARD:
+        try:
+            image_data, image_size = graphics.draw_operator_leaderboard(size, qso_operators)
+            if image_data is not None:
+                filename = makePNGTitle(image_dir, 'operator_leaderboard')
+                graphics.save_image(image_data, image_size, filename)
+        except Exception as e:
+            logging.exception(e)
 
     #if data_updated:   # Data is always updated since the sections map is always updated. Let rsync command handle this.
     if config.POST_FILE_COMMAND is not None:
@@ -261,6 +289,41 @@ def write_index_html(image_dir):
     """Write an index.html page to the image directory for web viewing."""
     event_name = config.EVENT_NAME
     dwell = config.DISPLAY_DWELL_TIME
+    mult_title = constants.get_mult_title()
+
+    # Build slides list - base slides always included
+    slides = [
+        (f'{mult_title} Map', 'sections_worked_map.png'),
+        ('Recent QSOs', 'last_qso_table.png'),
+        ('QSO Summary', 'qso_summary_table.png'),
+        ('QSO Rates', 'qso_rates_table.png'),
+        ('QSO Rate Over Time', 'qso_rates_graph.png'),
+        ('QSOs by Operator', 'qso_operators_graph.png'),
+        ('Operator Totals', 'qso_operators_table.png'),
+        ('All Operator Stats', 'qso_operators_table_all.png'),
+        ('QSOs by Station', 'qso_stations_graph.png'),
+        ('QSOs by Band', 'qso_bands_graph.png'),
+        ('QSOs by Mode', 'qso_modes_graph.png'),
+        ('QSOs by Class', 'qso_classes_graph.png'),
+        ('QSOs by Category', 'qso_categories_graph.png'),
+    ]
+
+    # Add optional slides based on config
+    if config.SHOW_RADIO_INFO:
+        slides.append(('Radio Status', 'radio_info.png'))
+    if config.SHOW_MULT_PROGRESS:
+        slides.append(('Multiplier Progress', 'mults_progress.png'))
+    if config.SHOW_MULT_REMAINING:
+        slides.append(('Multipliers Remaining', 'mults_remaining.png'))
+    if config.SHOW_OPERATOR_LEADERBOARD:
+        slides.append(('Operator Leaderboard', 'operator_leaderboard.png'))
+
+    # Build slides HTML
+    slides_html = '\n'.join(
+        f'  <div class="slide"><h2>{title}</h2>\n    <img src="{img}" alt="{title}"></div>'
+        for title, img in slides
+    )
+
     html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -381,34 +444,7 @@ def write_index_html(image_dir):
   <button class="nav-btn prev" id="prev">&lsaquo;</button>
   <button class="nav-btn next" id="next">&rsaquo;</button>
 
-  <div class="slide"><h2>{constants.get_mult_title()} Map</h2>
-    <img src="sections_worked_map.png" alt="{constants.get_mult_title()} Map"></div>
-  <div class="slide"><h2>Recent QSOs</h2>
-    <img src="last_qso_table.png" alt="Last QSOs Table"></div>
-  <div class="slide"><h2>QSO Summary</h2>
-    <img src="qso_summary_table.png" alt="QSO Summary Table"></div>
-  <div class="slide"><h2>QSO Rates</h2>
-    <img src="qso_rates_table.png" alt="QSO Rates Table"></div>
-  <div class="slide"><h2>QSO Rate Over Time</h2>
-    <img src="qso_rates_graph.png" alt="QSO Rates Graph"></div>
-  <div class="slide"><h2>QSOs by Operator</h2>
-    <img src="qso_operators_graph.png" alt="QSO Operators Pie Chart"></div>
-  <div class="slide"><h2>Operator Totals</h2>
-    <img src="qso_operators_table.png" alt="QSO Operators Table"></div>
-  <div class="slide"><h2>All Operator Stats</h2>
-    <img src="qso_operators_table_all.png" alt="QSO Operators Table All"></div>
-  <div class="slide"><h2>QSOs by Station</h2>
-    <img src="qso_stations_graph.png" alt="QSO Stations Pie Chart"></div>
-  <div class="slide"><h2>QSOs by Band</h2>
-    <img src="qso_bands_graph.png" alt="QSO Bands Pie Chart"></div>
-  <div class="slide"><h2>QSOs by Mode</h2>
-    <img src="qso_modes_graph.png" alt="QSO Modes Pie Chart"></div>
-  <div class="slide"><h2>QSOs by Class</h2>
-    <img src="qso_classes_graph.png" alt="QSO Classes Pie Chart"></div>
-  <div class="slide"><h2>QSOs by Category</h2>
-    <img src="qso_categories_graph.png" alt="QSO Categories Pie Chart"></div>
-  <div class="slide"><h2>Radio Status</h2>
-    <img src="radio_info.png" alt="Radio Status"></div>
+{slides_html}
 </div>
 
 <div class="dots" id="dots"></div>

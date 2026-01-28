@@ -637,7 +637,7 @@ def draw_radio_info(size, radios):
     logging.debug('draw_radio_info()')
 
     now = int(_time.time())
-    stale_threshold = 30  # seconds
+    stale_threshold = 60  # seconds - clear frequency data after this
 
     surface_width = size[0]
     surface_height = size[1]
@@ -741,11 +741,15 @@ def draw_radio_info(size, radios):
         text_y += line1_h + strip_padding
 
         # Line 2: RX frequency (large), TX frequency if split (right-aligned)
-        rx_str = format_frequency(radio['freq'])
+        # Clear frequency data if stale (no update in 60+ seconds)
+        if is_stale:
+            rx_str = '-.---.--'
+        else:
+            rx_str = format_frequency(radio['freq'])
         rx_surf = strip_freq_font.render(rx_str, True, f_color)
         surf.blit(rx_surf, (inner_x, text_y))
 
-        if radio['is_split'] and radio['tx_freq'] and radio['tx_freq'] != radio['freq']:
+        if not is_stale and radio['is_split'] and radio['tx_freq'] and radio['tx_freq'] != radio['freq']:
             tx_str = 'TX: %s' % format_frequency(radio['tx_freq'])
             tx_surf = strip_freq_font.render(tx_str, True, tf_color)
             tx_rect = tx_surf.get_rect()
@@ -791,6 +795,262 @@ def draw_radio_info(size, radios):
     raw_data = pygame.image.tostring(surf, image_format)
     logging.debug('draw_radio_info() done')
     return raw_data, result_size
+
+
+def draw_mults_progress(size, qsos_by_mult):
+    """
+    Draw a multiplier progress display with progress bar and percentage.
+    Shows "67/84 sections worked (80%)" with visual progress bar.
+    Returns (raw_data, size) or (None, (0,0)) if no data.
+    """
+    logging.debug('draw_mults_progress()')
+
+    mult_dict = get_mult_dictionary()
+    total_mults = len(mult_dict)
+
+    if qsos_by_mult is None:
+        qsos_by_mult = {}
+
+    # Count worked mults
+    worked_mults = sum(1 for mult in mult_dict.keys() if qsos_by_mult.get(mult, 0) > 0)
+
+    if total_mults == 0:
+        return None, (0, 0)
+
+    percentage = (worked_mults / total_mults) * 100
+    mult_type = 'States' if config.MULTS == 'STATES' else 'Sections'
+
+    # Get actual font heights for proper spacing
+    title_font = bigger_font
+    title_height = title_font.get_height()
+    main_font = view_font
+    main_height = main_font.get_height()
+
+    # Calculate text content first to determine width needed
+    title = f'{mult_type} Progress'
+    main_text = f'{worked_mults}/{total_mults} {mult_type.lower()} worked ({percentage:.0f}%)'
+    remaining = total_mults - worked_mults
+    remaining_text = f'{remaining} remaining'
+
+    title_width = title_font.size(title)[0]
+    main_width = main_font.size(main_text)[0]
+    remaining_width = main_font.size(remaining_text)[0]
+
+    # Layout calculations
+    padding = 30
+    bar_height = 50
+    bar_margin = 50
+    min_bar_width = 400
+
+    # Calculate surface width based on content
+    content_width = max(title_width, main_width, remaining_width)
+    surface_width = max(content_width + padding * 2, min_bar_width + bar_margin * 2)
+    surface_width = min(surface_width, size[0])  # Don't exceed screen width
+
+    # Calculate total height needed
+    y_cursor = padding
+    title_y = y_cursor
+    y_cursor += title_height + padding
+    main_y = y_cursor
+    y_cursor += main_height + padding * 2
+    bar_y = y_cursor
+    y_cursor += bar_height + padding
+    remaining_y = y_cursor
+    y_cursor += main_height + padding
+
+    surface_height = y_cursor
+    surf = pygame.Surface((surface_width, surface_height))
+    surf.fill(BLACK)
+
+    # Title
+    title_surf = title_font.render(title, True, WHITE)
+    title_rect = title_surf.get_rect()
+    title_rect.centerx = surface_width // 2
+    title_rect.y = title_y
+    surf.blit(title_surf, title_rect)
+
+    # Main text: "2/51 states worked (4%)"
+    main_surf = main_font.render(main_text, True, CYAN)
+    main_rect = main_surf.get_rect()
+    main_rect.centerx = surface_width // 2
+    main_rect.y = main_y
+    surf.blit(main_surf, main_rect)
+
+    # Progress bar
+    bar_width = surface_width - 2 * bar_margin
+
+    # Background bar (empty)
+    bar_bg_rect = pygame.Rect(bar_margin, bar_y, bar_width, bar_height)
+    pygame.draw.rect(surf, GRAY, bar_bg_rect, 3)
+
+    # Filled portion
+    if worked_mults > 0:
+        fill_width = int(bar_width * worked_mults / total_mults)
+        if fill_width < 6:
+            fill_width = 6  # Minimum visible width
+        fill_rect = pygame.Rect(bar_margin + 3, bar_y + 3, fill_width - 6, bar_height - 6)
+        # Color gradient based on progress
+        if percentage >= 75:
+            fill_color = GREEN
+        elif percentage >= 50:
+            fill_color = YELLOW
+        elif percentage >= 25:
+            fill_color = ORANGE
+        else:
+            fill_color = RED
+        pygame.draw.rect(surf, fill_color, fill_rect)
+
+    # Remaining count
+    remaining_surf = main_font.render(remaining_text, True, GRAY)
+    remaining_rect = remaining_surf.get_rect()
+    remaining_rect.centerx = surface_width // 2
+    remaining_rect.y = remaining_y
+    surf.blit(remaining_surf, remaining_rect)
+
+    result_size = surf.get_size()
+    raw_data = pygame.image.tostring(surf, image_format)
+    logging.debug('draw_mults_progress() done')
+    return raw_data, result_size
+
+
+def draw_mults_remaining(size, qsos_by_mult):
+    """
+    Draw a multi-column table of unworked multipliers.
+    Title shows count remaining.
+    Returns (raw_data, size) or (None, (0,0)) if no data.
+    """
+    logging.debug('draw_mults_remaining()')
+
+    mult_dict = get_mult_dictionary()
+
+    if qsos_by_mult is None:
+        qsos_by_mult = {}
+
+    # Find unworked mults
+    unworked = sorted([code for code in mult_dict.keys() if qsos_by_mult.get(code, 0) == 0])
+
+    # Get actual font heights
+    title_font = view_font
+    title_height = title_font.get_height()
+    cell_font = view_font
+    cell_height = cell_font.get_height() + 8
+    padding = 20
+
+    if len(unworked) == 0:
+        # All mults worked - show congratulations
+        mult_type = 'States' if config.MULTS == 'STATES' else 'Sections'
+        title = f'All {mult_type} Worked!'
+        title_surf = bigger_font.render(title, True, GREEN)
+
+        surface_width = title_surf.get_width() + padding * 2
+        surface_height = bigger_font.get_height() + padding * 2
+        surf = pygame.Surface((surface_width, surface_height))
+        surf.fill(BLACK)
+
+        title_rect = title_surf.get_rect()
+        title_rect.centerx = surface_width // 2
+        title_rect.centery = surface_height // 2
+        surf.blit(title_surf, title_rect)
+
+        result_size = surf.get_size()
+        raw_data = pygame.image.tostring(surf, image_format)
+        return raw_data, result_size
+
+    # Calculate layout
+    mult_type = 'States' if config.MULTS == 'STATES' else 'Sections'
+    title = f'{len(unworked)} {mult_type} Remaining'
+
+    # Calculate cell width based on widest code + padding
+    max_code_width = max(cell_font.size(code)[0] for code in unworked)
+    cell_width = max_code_width + 30  # Add padding between codes
+
+    # Determine columns based on count
+    num_unworked = len(unworked)
+    if num_unworked <= 10:
+        num_cols = 2
+    elif num_unworked <= 20:
+        num_cols = 3
+    elif num_unworked <= 40:
+        num_cols = 4
+    else:
+        num_cols = 5
+
+    num_rows = (num_unworked + num_cols - 1) // num_cols
+
+    # Calculate sizes
+    table_width = num_cols * cell_width
+    table_height = num_rows * cell_height
+
+    title_width = title_font.size(title)[0]
+    surface_width = max(table_width + padding * 2, title_width + padding * 2)
+
+    # Calculate positions dynamically
+    title_y = padding
+    grid_y = title_y + title_height + padding
+    surface_height = grid_y + table_height + padding
+
+    surf = pygame.Surface((surface_width, surface_height))
+    surf.fill(BLACK)
+
+    # Draw title
+    title_surf = title_font.render(title, True, YELLOW)
+    title_rect = title_surf.get_rect()
+    title_rect.centerx = surface_width // 2
+    title_rect.y = title_y
+    surf.blit(title_surf, title_rect)
+
+    # Draw grid of unworked mults
+    start_x = (surface_width - table_width) // 2
+
+    for i, code in enumerate(unworked):
+        col = i % num_cols
+        row = i // num_cols
+        x = start_x + col * cell_width
+        y = grid_y + row * cell_height
+
+        code_surf = cell_font.render(code, True, GRAY)
+        code_rect = code_surf.get_rect()
+        code_rect.centerx = x + cell_width // 2
+        code_rect.y = y
+        surf.blit(code_surf, code_rect)
+
+    result_size = surf.get_size()
+    raw_data = pygame.image.tostring(surf, image_format)
+    logging.debug('draw_mults_remaining() done')
+    return raw_data, result_size
+
+
+def draw_operator_leaderboard(size, qso_operators):
+    """
+    Draw a ranked operator leaderboard table.
+    Shows position (1st, 2nd, 3rd...), operator name, QSO count, percentage.
+    Returns (raw_data, size) or (None, (0,0)) if no data.
+    """
+    logging.debug('draw_operator_leaderboard()')
+
+    if qso_operators is None or len(qso_operators) == 0:
+        return None, (0, 0)
+
+    # Calculate total QSOs
+    total_qsos = sum(op[1] for op in qso_operators)
+    if total_qsos == 0:
+        return None, (0, 0)
+
+    # Build table data
+    cells = [['Rank', 'Operator', 'QSOs', '%']]
+
+    ordinals = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th',
+                '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th']
+
+    for i, (name, count) in enumerate(qso_operators):
+        rank = ordinals[i] if i < len(ordinals) else f'{i+1}th'
+        pct = (count / total_qsos) * 100
+        cells.append([rank, name, f'{count}', f'{pct:.1f}%'])
+
+    title = 'Operator Leaderboard'
+
+    logging.debug('draw_operator_leaderboard() done')
+    return draw_table(size, cells, title)
 
 
 def draw_map(size, qsos_by_section):

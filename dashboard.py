@@ -38,12 +38,18 @@ QSO_CATEGORIES_PIE_INDEX = 9
 QSO_RATE_CHART_IMAGE_INDEX = 10
 SECTIONS_WORKED_MAP_INDEX = 11
 RADIO_INFO_INDEX = 12
-IMAGE_COUNT = 13
+MULTS_PROGRESS_INDEX = 13
+MULTS_REMAINING_INDEX = 14
+OPERATOR_LEADERBOARD_INDEX = 15
+IMAGE_COUNT = 16
 
 IMAGE_MESSAGE = 1
 CRAWL_MESSAGE = 2
 
 SAVE_PNG = False
+
+# Module-level tracking for new mult alerts
+_previous_mults = set()
 
 def load_data(size, q, last_qso_timestamp):
     """
@@ -105,6 +111,20 @@ def load_data(size, q, last_qso_timestamp):
             qsos_by_section = dataaccess.get_qsos_by_state(cursor)
         else:
             qsos_by_section = dataaccess.get_qsos_by_section(cursor)
+
+        # Check for new multipliers and send alert
+        if config.SHOW_MULT_ALERT:
+            global _previous_mults
+            current_mults = set(code for code, count in qsos_by_section.items() if count > 0)
+            new_mults = current_mults - _previous_mults
+            if new_mults and _previous_mults:  # Only alert if we had previous mults (not first load)
+                mult_dict = constants.get_mult_dictionary()
+                for mult_code in new_mults:
+                    mult_name = mult_dict.get(mult_code, mult_code)
+                    alert_msg = f'NEW MULT: {mult_code} - {mult_name}!'
+                    q.put((CRAWL_MESSAGE, 5, alert_msg, graphics.YELLOW, graphics.RED))
+                    logging.info(f'New multiplier alert: {alert_msg}')
+            _previous_mults = current_mults
 
         # load radio info
         radio_info = dataaccess.get_radio_info(cursor)
@@ -186,11 +206,33 @@ def load_data(size, q, last_qso_timestamp):
     except Exception as e:
         logging.exception(e)
 
-    try:
-        image_data, image_size = graphics.draw_radio_info(size, radio_info)
-        enqueue_image(q, RADIO_INFO_INDEX, image_data, image_size)
-    except Exception as e:
-        logging.exception(e)
+    if config.SHOW_RADIO_INFO:
+        try:
+            image_data, image_size = graphics.draw_radio_info(size, radio_info)
+            enqueue_image(q, RADIO_INFO_INDEX, image_data, image_size)
+        except Exception as e:
+            logging.exception(e)
+
+    if config.SHOW_MULT_PROGRESS:
+        try:
+            image_data, image_size = graphics.draw_mults_progress(size, qsos_by_section)
+            enqueue_image(q, MULTS_PROGRESS_INDEX, image_data, image_size)
+        except Exception as e:
+            logging.exception(e)
+
+    if config.SHOW_MULT_REMAINING:
+        try:
+            image_data, image_size = graphics.draw_mults_remaining(size, qsos_by_section)
+            enqueue_image(q, MULTS_REMAINING_INDEX, image_data, image_size)
+        except Exception as e:
+            logging.exception(e)
+
+    if data_updated and config.SHOW_OPERATOR_LEADERBOARD:
+        try:
+            image_data, image_size = graphics.draw_operator_leaderboard(size, qso_operators)
+            enqueue_image(q, OPERATOR_LEADERBOARD_INDEX, image_data, image_size)
+        except Exception as e:
+            logging.exception(e)
 
     return last_qso_time
 

@@ -54,3 +54,16 @@ IMAGE_DIR = None
 # If font seems too big, try 60 for VIEW_FONT and 100 for BIGGER_FONT
 VIEW_FONT = 64
 BIGGER_FONT = 180
+
+[FEATURES]
+# Optional display features - set to True to enable
+# Radio Status display showing N1MM radio info
+SHOW_RADIO_INFO = False
+# Multiplier progress bar showing worked/total mults
+SHOW_MULT_PROGRESS = False
+# Table of remaining unworked multipliers
+SHOW_MULT_REMAINING = False
+# Crawl alert when a new multiplier is logged (yellow on red)
+SHOW_MULT_ALERT = False
+# Ranked operator leaderboard with positions and percentages
+SHOW_OPERATOR_LEADERBOARD = False
