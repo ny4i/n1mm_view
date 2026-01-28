@@ -322,6 +322,7 @@ def change_image(screen, size, images, image_index, delta):
             image_index = len(images) - 1
         if images[image_index] is not None:
             break
+    logging.debug('showing image %d', image_index)
     graphics.show_graph(screen, size, images[image_index])
     return image_index
 
