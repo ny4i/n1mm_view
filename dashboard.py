@@ -255,7 +255,7 @@ class CrawlMessages:
             self.first_x = self.size[0]
             self.last_added_index = 0
 
-        self.first_x -= 2  # JEFF
+        self.first_x -= 4  # doubled step: 4px * 30fps = 120px/sec same as 2px * 60fps
         rect = self.message_surfaces[0].get_rect()
         if self.first_x + rect.width < 0:
             self.message_surfaces = self.message_surfaces[1:]
@@ -362,6 +362,7 @@ def main():
 
         display_update_timer = config.DISPLAY_DWELL_TIME
         clock = pygame.time.Clock()
+        crawl_rect = pygame.Rect(0, size[1] - graphics.view_font_height, size[0], graphics.view_font_height)
 
         while run:
             for event in pygame.event.get():
@@ -418,10 +419,11 @@ def main():
                         crawl_messages.set_message(n, message)
                         crawl_messages.set_message_colors(n, fg, bg)
 
+            screen.fill((0, 0, 0), crawl_rect)
             crawl_messages.crawl_message()
-            pygame.display.update()  # was .flip()
+            pygame.display.update()
 
-            clock.tick(60)
+            clock.tick(30)
 
         pygame.time.set_timer(pygame.USEREVENT, 0)
     except Exception as e:
