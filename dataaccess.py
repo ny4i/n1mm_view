@@ -66,7 +66,75 @@ def create_tables(db, cursor):
     except Exception:
         pass  # column already exists
 
+    cursor.execute('CREATE TABLE IF NOT EXISTS radio_info\n'
+                   '    (station_name CHAR(32) NOT NULL,\n'
+                   '     radio_nr     INTEGER NOT NULL,\n'
+                   '     freq         INTEGER NOT NULL DEFAULT 0,\n'
+                   '     tx_freq      INTEGER NOT NULL DEFAULT 0,\n'
+                   '     mode         CHAR(12),\n'
+                   '     op_call      CHAR(12),\n'
+                   '     is_running   INTEGER NOT NULL DEFAULT 0,\n'
+                   '     is_transmitting INTEGER NOT NULL DEFAULT 0,\n'
+                   '     is_connected INTEGER NOT NULL DEFAULT 0,\n'
+                   '     is_split     INTEGER NOT NULL DEFAULT 0,\n'
+                   '     radio_name   CHAR(32),\n'
+                   '     antenna      INTEGER,\n'
+                   '     last_update  INTEGER NOT NULL,\n'
+                   '     PRIMARY KEY (station_name, radio_nr));')
+
     db.commit()
+
+
+def record_radio_info(db, cursor, station_name, radio_nr, freq, tx_freq, mode, op_call,
+                      is_running, is_transmitting, is_connected, is_split,
+                      radio_name, antenna, last_update):
+    """
+    record or update radio info for a station/radio
+    """
+    try:
+        cursor.execute(
+            'INSERT OR REPLACE INTO radio_info\n'
+            '    (station_name, radio_nr, freq, tx_freq, mode, op_call,\n'
+            '     is_running, is_transmitting, is_connected, is_split,\n'
+            '     radio_name, antenna, last_update)\n'
+            '    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
+            (station_name, radio_nr, freq, tx_freq, mode, op_call,
+             is_running, is_transmitting, is_connected, is_split,
+             radio_name, antenna, last_update))
+        db.commit()
+    except Exception as err:
+        logging.warning('record_radio_info failed: %s' % str(err))
+
+
+def get_radio_info(cursor):
+    """
+    return list of dicts with radio info, ordered by station_name, radio_nr
+    """
+    try:
+        cursor.execute('SELECT station_name, radio_nr, freq, tx_freq, mode, op_call,\n'
+                       '       is_running, is_transmitting, is_connected, is_split,\n'
+                       '       radio_name, antenna, last_update\n'
+                       'FROM radio_info ORDER BY station_name, radio_nr;')
+        radios = []
+        for row in cursor:
+            radios.append({
+                'station_name': row[0],
+                'radio_nr': row[1],
+                'freq': row[2],
+                'tx_freq': row[3],
+                'mode': row[4],
+                'op_call': row[5],
+                'is_running': row[6],
+                'is_transmitting': row[7],
+                'is_connected': row[8],
+                'is_split': row[9],
+                'radio_name': row[10],
+                'antenna': row[11],
+                'last_update': row[12],
+            })
+        return radios
+    except Exception:
+        return []
 
 
 def record_contact_combined(db, cursor, operators, stations,

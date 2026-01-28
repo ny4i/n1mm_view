@@ -42,6 +42,9 @@ GRAY = pygame.Color('#cccccc')
 pygame.font.init()
 view_font = pygame.font.Font('VeraMoBd.ttf', config.VIEW_FONT)
 bigger_font = pygame.font.SysFont('VeraMoBd.ttf', config.BIGGER_FONT)
+strip_freq_font = pygame.font.Font('VeraMoBd.ttf', 48)
+strip_label_font = pygame.font.Font('VeraMoBd.ttf', 24)
+strip_status_font = pygame.font.Font('VeraMoBd.ttf', 20)
 view_font_height = view_font.get_height()
 
 if matplotlib.__version__.startswith('3.6'):  # hack for raspberry pi.
@@ -604,6 +607,190 @@ def draw_table(size, cell_text, title, font=None):
     data = pygame.image.tostring(surf, image_format)
 
     return data, size
+
+
+def format_frequency(freq_hz):
+    """
+    Convert frequency in Hz to display format like '14.250.00'.
+    Returns '-.---.--' for zero or None.
+    """
+    if not freq_hz:
+        return '-.---.--'
+    freq_khz = freq_hz / 1000.0
+    mhz = int(freq_khz / 1000)
+    remainder_khz = freq_khz - mhz * 1000
+    khz_part = int(remainder_khz)
+    decimal_part = int(round((remainder_khz - khz_part) * 100))
+    return '%d.%03d.%02d' % (mhz, khz_part, decimal_part)
+
+
+def draw_radio_info(size, radios):
+    """
+    Draw flight-strip style radio status display.
+    Returns (raw_data, (w, h)) or (None, (0, 0)).
+    """
+    import time as _time
+
+    if not radios:
+        return None, (0, 0)
+
+    logging.debug('draw_radio_info()')
+
+    now = int(_time.time())
+    stale_threshold = 30  # seconds
+
+    surface_width = size[0]
+    surface_height = size[1]
+    surf = pygame.Surface((surface_width, surface_height))
+    surf.fill(BLACK)
+
+    # Colors
+    border_tx = RED
+    border_default = GRAY
+    dim_color = pygame.Color('#666666')
+    title_color = WHITE
+    label_color = WHITE
+    freq_color = GREEN
+    status_color = CYAN
+    header_color = YELLOW
+    tx_freq_color = ORANGE
+
+    # Title
+    title_text = strip_label_font.render('Radio Status', True, title_color)
+    title_rect = title_text.get_rect()
+    title_rect.centerx = surface_width // 2
+    title_rect.y = 5
+    surf.blit(title_text, title_rect)
+
+    y_cursor = title_rect.bottom + 10
+    strip_margin = 10
+    strip_padding = 6
+    line1_h = strip_label_font.get_height()
+    line2_h = strip_freq_font.get_height()
+    line3_h = strip_status_font.get_height()
+    strip_height = line1_h + line2_h + line3_h + strip_padding * 4
+    strip_width = surface_width - 2 * strip_margin
+    border_width = 3
+
+    # Group radios by station name
+    current_station = None
+    for radio in radios:
+        station = radio['station_name']
+        is_stale = (now - radio['last_update']) > stale_threshold
+        stale_seconds = now - radio['last_update']
+
+        # Station header
+        if station != current_station:
+            current_station = station
+            hdr_color = dim_color if is_stale else header_color
+            header_text = strip_label_font.render('-- %s ' % station, True, hdr_color)
+            # Draw header with line
+            surf.blit(header_text, (strip_margin, y_cursor))
+            line_x = strip_margin + header_text.get_width() + 4
+            line_y = y_cursor + line1_h // 2
+            if line_x < surface_width - strip_margin:
+                pygame.draw.line(surf, hdr_color, (line_x, line_y),
+                                 (surface_width - strip_margin, line_y), 1)
+            y_cursor += line1_h + 4
+
+        if y_cursor + strip_height > surface_height:
+            break  # no room for more strips
+
+        # Determine border color
+        if radio['is_transmitting']:
+            b_color = border_tx
+        else:
+            b_color = border_default
+
+        if is_stale:
+            b_color = dim_color
+
+        # Draw strip border
+        strip_rect = pygame.Rect(strip_margin, y_cursor, strip_width, strip_height)
+        pygame.draw.rect(surf, b_color, strip_rect, border_width)
+
+        inner_x = strip_margin + strip_padding + border_width
+        inner_right = strip_margin + strip_width - strip_padding - border_width
+        text_y = y_cursor + strip_padding + border_width
+
+        # Choose text colors based on stale status
+        l_color = dim_color if is_stale else label_color
+        f_color = dim_color if is_stale else freq_color
+        s_color = dim_color if is_stale else status_color
+        tf_color = dim_color if is_stale else tx_freq_color
+
+        # Line 1: Radio number + name, operator right-aligned
+        radio_label = 'R%d' % radio['radio_nr']
+        if radio['radio_name']:
+            radio_label += '  %s' % radio['radio_name']
+        line1_surf = strip_label_font.render(radio_label, True, l_color)
+        surf.blit(line1_surf, (inner_x, text_y))
+
+        op_text = ''
+        if radio['op_call']:
+            op_text = 'Op: %s' % radio['op_call']
+        if is_stale:
+            op_text += '  (%ds ago)' % stale_seconds
+        if op_text:
+            op_surf = strip_label_font.render(op_text, True, l_color)
+            op_rect = op_surf.get_rect()
+            op_rect.right = inner_right
+            op_rect.y = text_y
+            surf.blit(op_surf, op_rect)
+
+        text_y += line1_h + strip_padding
+
+        # Line 2: RX frequency (large), TX frequency if split (right-aligned)
+        rx_str = format_frequency(radio['freq'])
+        rx_surf = strip_freq_font.render(rx_str, True, f_color)
+        surf.blit(rx_surf, (inner_x, text_y))
+
+        if radio['is_split'] and radio['tx_freq'] and radio['tx_freq'] != radio['freq']:
+            tx_str = 'TX: %s' % format_frequency(radio['tx_freq'])
+            tx_surf = strip_freq_font.render(tx_str, True, tf_color)
+            tx_rect = tx_surf.get_rect()
+            tx_rect.right = inner_right
+            tx_rect.y = text_y
+            surf.blit(tx_surf, tx_rect)
+
+        text_y += line2_h + strip_padding
+
+        # Line 3: Mode, RUN/S&P, SPLIT, TX, CONN/DISC
+        status_parts = []
+        if radio['mode']:
+            status_parts.append(radio['mode'])
+        if radio['is_running']:
+            status_parts.append('RUN')
+        else:
+            status_parts.append('S&P')
+        if radio['is_split']:
+            status_parts.append('SPLIT')
+
+        left_status = '   '.join(status_parts)
+        left_surf = strip_status_font.render(left_status, True, s_color)
+        surf.blit(left_surf, (inner_x, text_y))
+
+        right_parts = []
+        if radio['is_transmitting']:
+            right_parts.append('TX')
+        if radio['is_connected']:
+            right_parts.append('CONN')
+        else:
+            right_parts.append('DISC')
+
+        right_status = '   '.join(right_parts)
+        right_surf = strip_status_font.render(right_status, True, s_color)
+        right_rect = right_surf.get_rect()
+        right_rect.right = inner_right
+        right_rect.y = text_y
+        surf.blit(right_surf, right_rect)
+
+        y_cursor += strip_height + 4
+
+    result_size = surf.get_size()
+    raw_data = pygame.image.tostring(surf, image_format)
+    logging.debug('draw_radio_info() done')
+    return raw_data, result_size
 
 
 def draw_map(size, qsos_by_section):

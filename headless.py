@@ -53,6 +53,7 @@ def create_images(size, image_dir, last_qso_timestamp):
     qso_classes = []
     qso_categories = []
     qsos = []
+    radio_info = []
 
     db = None
     data_updated = False
@@ -110,6 +111,9 @@ def create_images(size, image_dir, last_qso_timestamp):
         else:
             qsos_by_section = dataaccess.get_qsos_by_section(cursor)
         logging.debug("get_qsos_by_section returned %s qsos" % (qsos_by_section))
+
+        # load radio info
+        radio_info = dataaccess.get_radio_info(cursor)
 
         logging.info('load data done')
     except sqlite3.OperationalError as error:
@@ -230,6 +234,14 @@ def create_images(size, image_dir, last_qso_timestamp):
        else:
           logging.debug('image_data was None when drawing map')
 
+    except Exception as e:
+        logging.exception(e)
+
+    try:
+        image_data, image_size = graphics.draw_radio_info(size, radio_info)
+        if image_data is not None:
+            filename = makePNGTitle(image_dir, 'radio_info')
+            graphics.save_image(image_data, image_size, filename)
     except Exception as e:
         logging.exception(e)
 
@@ -395,6 +407,8 @@ def write_index_html(image_dir):
     <img src="qso_classes_graph.png" alt="QSO Classes Pie Chart"></div>
   <div class="slide"><h2>QSOs by Category</h2>
     <img src="qso_categories_graph.png" alt="QSO Categories Pie Chart"></div>
+  <div class="slide"><h2>Radio Status</h2>
+    <img src="radio_info.png" alt="Radio Status"></div>
 </div>
 
 <div class="dots" id="dots"></div>

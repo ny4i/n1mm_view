@@ -206,6 +206,25 @@ def process_message(parser, db, cursor, operators, stations, message, seen):
                                            exchange, section, comment, qso_id, state=state)
     elif message_type == 'RadioInfo':
         logging.debug('Received RadioInfo message')
+        station_name = data.get('StationName', '').upper()
+        if station_name == '':
+            station_name = data.get('NetBiosName', '').upper()
+        radio_nr = int(data.get('RadioNr', '1'))
+        freq = int(data.get('Freq', '0')) * 10  # convert from 10Hz units to Hz
+        tx_freq = int(data.get('TXFreq', '0')) * 10
+        mode = data.get('Mode', '').upper()
+        op_call = data.get('OpCall', '').upper()
+        is_running = 1 if data.get('IsRunning', 'False') == 'True' else 0
+        is_transmitting = 1 if data.get('IsTransmitting', 'False') == 'True' else 0
+        is_connected = 1 if data.get('IsConnected', 'False') == 'True' else 0
+        is_split = 1 if data.get('IsSplit', 'False') == 'True' else 0
+        radio_name = data.get('RadioName', '')
+        antenna = int(data.get('Antenna', '0'))
+        last_update = int(time.time())
+        dataaccess.record_radio_info(db, cursor, station_name, radio_nr, freq, tx_freq,
+                                     mode, op_call, is_running, is_transmitting,
+                                     is_connected, is_split, radio_name, antenna,
+                                     last_update)
     elif message_type == 'contactdelete':
         qso_id = data.get('ID') or ''
         

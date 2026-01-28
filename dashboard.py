@@ -37,7 +37,8 @@ QSO_CLASSES_PIE_INDEX = 8
 QSO_CATEGORIES_PIE_INDEX = 9
 QSO_RATE_CHART_IMAGE_INDEX = 10
 SECTIONS_WORKED_MAP_INDEX = 11
-IMAGE_COUNT = 12
+RADIO_INFO_INDEX = 12
+IMAGE_COUNT = 13
 
 IMAGE_MESSAGE = 1
 CRAWL_MESSAGE = 2
@@ -57,6 +58,7 @@ def load_data(size, q, last_qso_timestamp):
     qsos_per_hour = []
     qsos_by_section = {}
     qso_classes = []
+    radio_info = []
 
     db = None
     data_updated = False
@@ -103,6 +105,9 @@ def load_data(size, q, last_qso_timestamp):
             qsos_by_section = dataaccess.get_qsos_by_state(cursor)
         else:
             qsos_by_section = dataaccess.get_qsos_by_section(cursor)
+
+        # load radio info
+        radio_info = dataaccess.get_radio_info(cursor)
 
         q.put((CRAWL_MESSAGE, 0, ''))
 
@@ -178,6 +183,12 @@ def load_data(size, q, last_qso_timestamp):
         image_data, image_size = graphics.draw_map(size, qsos_by_section)
         enqueue_image(q, SECTIONS_WORKED_MAP_INDEX, image_data, image_size)
         gc.collect()
+    except Exception as e:
+        logging.exception(e)
+
+    try:
+        image_data, image_size = graphics.draw_radio_info(size, radio_info)
+        enqueue_image(q, RADIO_INFO_INDEX, image_data, image_size)
     except Exception as e:
         logging.exception(e)
 
