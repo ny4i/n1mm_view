@@ -157,91 +157,201 @@ def convert_timestamp(s):
 
 def process_message(parser, db, cursor, operators, stations, message, seen):
     """
-    Process a N1MM+ contactinfo message
+    Process a N1MM+ contactinfo message.
+
+    Validates input data and logs warnings for malformed messages rather than
+    raising exceptions, to ensure the collector continues running even when
+    receiving bad data.
     """
     message = compress_message(message)
-    data = parser.parse(message)
+
+    # Parse XML with error handling
+    try:
+        data = parser.parse(message)
+    except xml.parsers.expat.ExpatError as e:
+        logging.warning(f'Malformed XML in UDP message: {e}')
+        logging.debug(f'Raw message: {message}')
+        return
+
     logging.debug(f'{data}')
     message_type = data.get('__messagetype__', '')
     logging.debug(f'Received UDP message {message_type}')
+
     if message_type in ['contactinfo', 'contactreplace']:
-        qso_id = data.get('ID', '')
-        
-        # If no ID tag from N1MM, generate a hash for uniqueness
-        if len(qso_id) == 0:
-           qso_id = checksum(data)
-        else:
-           qso_id = qso_id.replace('-','')
-            
-        qso_timestamp = data.get('timestamp')
-        mycall = data.get('mycall', '').upper()
-        band = data.get('band')
-        mode = data.get('mode', '').upper()
-        operator = data.get('operator', '').upper()
-        station_name = data.get('StationName', '').upper()
-        if station_name is None or station_name == '':
-            station_name = data.get('NetBiosName', '')
-        station = station_name.upper()
-        rx_freq = int(data.get('rxfreq')) * 10  # convert to Hz
-        tx_freq = int(data.get('txfreq')) * 10
-        callsign = data.get('call', '').upper()
-        rst_sent = data.get('snt')
-        rst_recv = data.get('rcv')
-        exchange = data.get('exchange1', '').upper()
-        section = data.get('section', '').upper()
-        comment = data.get('comment', '')
-
-        # Extract state from section when in STATES multiplier mode
-        if config.MULTS == 'STATES':
-            state = section
-        else:
-            state = ''
-
-        # convert qso_timestamp to datetime object
-        timestamp = convert_timestamp(qso_timestamp)
-
-        dataaccess.record_contact_combined(db, cursor, operators, stations,
-                                           timestamp, mycall, band, mode, operator, station,
-                                           rx_freq, tx_freq, callsign, rst_sent, rst_recv,
-                                           exchange, section, comment, qso_id, state=state)
+        _process_contact(data, db, cursor, operators, stations)
     elif message_type == 'RadioInfo':
-        logging.debug('Received RadioInfo message')
-        station_name = data.get('StationName', '').upper()
-        if station_name == '':
-            station_name = data.get('NetBiosName', '').upper()
-        radio_nr = int(data.get('RadioNr', '1'))
-        freq = int(data.get('Freq', '0')) * 10  # convert from 10Hz units to Hz
-        tx_freq = int(data.get('TXFreq', '0')) * 10
-        mode = data.get('Mode', '').upper()
-        op_call = data.get('OpCall', '').upper()
-        is_running = 1 if data.get('IsRunning', 'False') == 'True' else 0
-        is_transmitting = 1 if data.get('IsTransmitting', 'False') == 'True' else 0
-        is_connected = 1 if data.get('IsConnected', 'False') == 'True' else 0
-        is_split = 1 if data.get('IsSplit', 'False') == 'True' else 0
-        radio_name = data.get('RadioName', '')
-        antenna = int(data.get('Antenna', '0'))
-        last_update = int(time.time())
-        dataaccess.record_radio_info(db, cursor, station_name, radio_nr, freq, tx_freq,
-                                     mode, op_call, is_running, is_transmitting,
-                                     is_connected, is_split, radio_name, antenna,
-                                     last_update)
+        _process_radio_info(data, db, cursor)
     elif message_type == 'contactdelete':
-        qso_id = data.get('ID') or ''
-        
-        # If no ID tag from N1MM, generate a hash for uniqueness
-        if len(qso_id) == 0:
-            qso_id = checksum(data)
-        else:
-            qso_id = qso_id.replace('-', '')
-        
-        logging.info(f'Delete QSO Request with ID {qso_id}')
-        dataaccess.delete_contact_by_qso_id(db, cursor, qso_id)
-        
+        _process_contact_delete(data, db, cursor)
     elif message_type == 'dynamicresults':
         logging.debug('Received Score message')
     else:
         logging.warning(f'unknown message type "{message_type}" received, ignoring.')
         logging.debug(message)
+
+
+def _process_contact(data, db, cursor, operators, stations):
+    """Process a contactinfo or contactreplace message with validation."""
+    qso_id = data.get('ID', '')
+
+    # If no ID tag from N1MM, generate a hash for uniqueness
+    if len(qso_id) == 0:
+        # Validate required fields for checksum
+        required_fields = ['timestamp', 'StationName', 'contestnr', 'call']
+        missing = [f for f in required_fields if f not in data]
+        if missing:
+            logging.warning(f'Contact message missing required fields for checksum: {missing}')
+            logging.debug(f'Message data: {data}')
+            return
+        qso_id = checksum(data)
+    else:
+        qso_id = qso_id.replace('-', '')
+
+    # Validate timestamp
+    qso_timestamp = data.get('timestamp')
+    if not qso_timestamp:
+        logging.warning('Contact message missing timestamp field')
+        logging.debug(f'Message data: {data}')
+        return
+
+    try:
+        timestamp = convert_timestamp(qso_timestamp)
+    except ValueError as e:
+        logging.warning(f'Contact message has invalid timestamp format "{qso_timestamp}": {e}')
+        logging.debug(f'Message data: {data}')
+        return
+
+    # Validate frequencies
+    rx_freq_str = data.get('rxfreq')
+    tx_freq_str = data.get('txfreq')
+
+    if rx_freq_str is None:
+        logging.warning('Contact message missing rxfreq field')
+        logging.debug(f'Message data: {data}')
+        return
+    if tx_freq_str is None:
+        logging.warning('Contact message missing txfreq field')
+        logging.debug(f'Message data: {data}')
+        return
+
+    try:
+        rx_freq = int(rx_freq_str) * 10  # convert to Hz
+    except ValueError:
+        logging.warning(f'Contact message has invalid rxfreq "{rx_freq_str}"')
+        logging.debug(f'Message data: {data}')
+        return
+
+    try:
+        tx_freq = int(tx_freq_str) * 10
+    except ValueError:
+        logging.warning(f'Contact message has invalid txfreq "{tx_freq_str}"')
+        logging.debug(f'Message data: {data}')
+        return
+
+    # Validate frequencies are non-negative
+    if rx_freq < 0:
+        logging.warning(f'Contact message has negative rxfreq: {rx_freq}')
+        logging.debug(f'Message data: {data}')
+        return
+    if tx_freq < 0:
+        logging.warning(f'Contact message has negative txfreq: {tx_freq}')
+        logging.debug(f'Message data: {data}')
+        return
+
+    # Extract remaining fields with defaults
+    mycall = data.get('mycall', '').upper()
+    band = data.get('band')
+    mode = data.get('mode', '').upper()
+    operator = data.get('operator', '').upper()
+    station_name = data.get('StationName', '').upper()
+    if station_name is None or station_name == '':
+        station_name = data.get('NetBiosName', '')
+    station = station_name.upper()
+    callsign = data.get('call', '').upper()
+    rst_sent = data.get('snt')
+    rst_recv = data.get('rcv')
+    exchange = data.get('exchange1', '').upper()
+    section = data.get('section', '').upper()
+    comment = data.get('comment', '')
+
+    # Extract state from section when in STATES multiplier mode
+    if config.MULTS == 'STATES':
+        state = section
+    else:
+        state = ''
+
+    dataaccess.record_contact_combined(db, cursor, operators, stations,
+                                       timestamp, mycall, band, mode, operator, station,
+                                       rx_freq, tx_freq, callsign, rst_sent, rst_recv,
+                                       exchange, section, comment, qso_id, state=state)
+
+
+def _process_radio_info(data, db, cursor):
+    """Process a RadioInfo message with validation."""
+    logging.debug('Received RadioInfo message')
+    station_name = data.get('StationName', '').upper()
+    if station_name == '':
+        station_name = data.get('NetBiosName', '').upper()
+
+    # Validate numeric fields with defaults
+    try:
+        radio_nr = int(data.get('RadioNr', '1'))
+    except ValueError:
+        logging.warning(f'RadioInfo has invalid RadioNr "{data.get("RadioNr")}", using default 1')
+        radio_nr = 1
+
+    try:
+        freq = int(data.get('Freq', '0')) * 10  # convert from 10Hz units to Hz
+    except ValueError:
+        logging.warning(f'RadioInfo has invalid Freq "{data.get("Freq")}", using default 0')
+        freq = 0
+
+    try:
+        tx_freq = int(data.get('TXFreq', '0')) * 10
+    except ValueError:
+        logging.warning(f'RadioInfo has invalid TXFreq "{data.get("TXFreq")}", using default 0')
+        tx_freq = 0
+
+    try:
+        antenna = int(data.get('Antenna', '0'))
+    except ValueError:
+        logging.warning(f'RadioInfo has invalid Antenna "{data.get("Antenna")}", using default 0')
+        antenna = 0
+
+    mode = data.get('Mode', '').upper()
+    op_call = data.get('OpCall', '').upper()
+    is_running = 1 if data.get('IsRunning', 'False') == 'True' else 0
+    is_transmitting = 1 if data.get('IsTransmitting', 'False') == 'True' else 0
+    is_connected = 1 if data.get('IsConnected', 'False') == 'True' else 0
+    is_split = 1 if data.get('IsSplit', 'False') == 'True' else 0
+    radio_name = data.get('RadioName', '')
+    last_update = int(time.time())
+
+    dataaccess.record_radio_info(db, cursor, station_name, radio_nr, freq, tx_freq,
+                                 mode, op_call, is_running, is_transmitting,
+                                 is_connected, is_split, radio_name, antenna,
+                                 last_update)
+
+
+def _process_contact_delete(data, db, cursor):
+    """Process a contactdelete message with validation."""
+    qso_id = data.get('ID') or ''
+
+    # If no ID tag from N1MM, generate a hash for uniqueness
+    if len(qso_id) == 0:
+        # Validate required fields for checksum
+        required_fields = ['timestamp', 'StationName', 'contestnr', 'call']
+        missing = [f for f in required_fields if f not in data]
+        if missing:
+            logging.warning(f'contactdelete message missing required fields: {missing}')
+            logging.debug(f'Message data: {data}')
+            return
+        qso_id = checksum(data)
+    else:
+        qso_id = qso_id.replace('-', '')
+
+    logging.info(f'Delete QSO Request with ID {qso_id}')
+    dataaccess.delete_contact_by_qso_id(db, cursor, qso_id)
 
 
 def message_processor(q, event):

@@ -422,10 +422,10 @@ def test_db():
 class TestProcessMessageMalformed:
     """Tests for process_message handling of malformed/incomplete messages."""
 
-    def test_contactinfo_missing_timestamp_raises_error(self, test_db):
-        """Test contactinfo missing timestamp raises KeyError from checksum."""
+    def test_contactinfo_missing_timestamp_skipped(self, test_db):
+        """Test contactinfo missing timestamp is skipped gracefully."""
         conn, cursor, operators, stations, parser, seen = test_db
-        # Without timestamp field, checksum() will raise KeyError
+        # Without timestamp field, message should be skipped
         xml = b'''<contactinfo>
             <call>W1AW</call>
             <band>14</band>
@@ -435,11 +435,13 @@ class TestProcessMessageMalformed:
             <StationName>Station1</StationName>
             <contestnr>1</contestnr>
         </contactinfo>'''
-        with pytest.raises(KeyError):
-            process_message(parser, conn, cursor, operators, stations, xml, seen)
+        # Should not raise - just logs warning and skips
+        process_message(parser, conn, cursor, operators, stations, xml, seen)
+        cursor.execute('SELECT COUNT(*) FROM qso_log')
+        assert cursor.fetchone()[0] == 0
 
-    def test_contactinfo_missing_frequency_raises_error(self, test_db):
-        """Test contactinfo missing rxfreq raises TypeError."""
+    def test_contactinfo_missing_frequency_skipped(self, test_db):
+        """Test contactinfo missing rxfreq is skipped gracefully."""
         conn, cursor, operators, stations, parser, seen = test_db
         xml = b'''<contactinfo>
             <timestamp>2024-06-22 18:30:45</timestamp>
@@ -451,12 +453,13 @@ class TestProcessMessageMalformed:
             <contestnr>1</contestnr>
             <ID>test-id</ID>
         </contactinfo>'''
-        # Missing rxfreq should cause int(None) to fail
-        with pytest.raises(TypeError):
-            process_message(parser, conn, cursor, operators, stations, xml, seen)
+        # Should not raise - just logs warning and skips
+        process_message(parser, conn, cursor, operators, stations, xml, seen)
+        cursor.execute('SELECT COUNT(*) FROM qso_log')
+        assert cursor.fetchone()[0] == 0
 
-    def test_contactinfo_non_numeric_frequency_raises_error(self, test_db):
-        """Test contactinfo with non-numeric frequency raises ValueError."""
+    def test_contactinfo_non_numeric_frequency_skipped(self, test_db):
+        """Test contactinfo with non-numeric frequency is skipped gracefully."""
         conn, cursor, operators, stations, parser, seen = test_db
         xml = b'''<contactinfo>
             <timestamp>2024-06-22 18:30:45</timestamp>
@@ -469,11 +472,13 @@ class TestProcessMessageMalformed:
             <contestnr>1</contestnr>
             <ID>test-id</ID>
         </contactinfo>'''
-        with pytest.raises(ValueError):
-            process_message(parser, conn, cursor, operators, stations, xml, seen)
+        # Should not raise - just logs warning and skips
+        process_message(parser, conn, cursor, operators, stations, xml, seen)
+        cursor.execute('SELECT COUNT(*) FROM qso_log')
+        assert cursor.fetchone()[0] == 0
 
-    def test_contactinfo_invalid_timestamp_format_raises_error(self, test_db):
-        """Test contactinfo with invalid timestamp format raises ValueError."""
+    def test_contactinfo_invalid_timestamp_format_skipped(self, test_db):
+        """Test contactinfo with invalid timestamp format is skipped gracefully."""
         conn, cursor, operators, stations, parser, seen = test_db
         xml = b'''<contactinfo>
             <timestamp>22/06/2024 18:30:45</timestamp>
@@ -486,29 +491,37 @@ class TestProcessMessageMalformed:
             <contestnr>1</contestnr>
             <ID>test-id</ID>
         </contactinfo>'''
-        with pytest.raises(ValueError):
-            process_message(parser, conn, cursor, operators, stations, xml, seen)
+        # Should not raise - just logs warning and skips
+        process_message(parser, conn, cursor, operators, stations, xml, seen)
+        cursor.execute('SELECT COUNT(*) FROM qso_log')
+        assert cursor.fetchone()[0] == 0
 
-    def test_radioinfo_non_numeric_freq_raises_error(self, test_db):
-        """Test RadioInfo with non-numeric frequency raises ValueError."""
+    def test_radioinfo_non_numeric_freq_uses_default(self, test_db):
+        """Test RadioInfo with non-numeric frequency uses default 0."""
         conn, cursor, operators, stations, parser, seen = test_db
         xml = b'''<RadioInfo>
             <StationName>Station1</StationName>
             <Freq>invalid</Freq>
         </RadioInfo>'''
-        with pytest.raises(ValueError):
-            process_message(parser, conn, cursor, operators, stations, xml, seen)
+        # Should not raise - uses default value
+        process_message(parser, conn, cursor, operators, stations, xml, seen)
+        radios = dataaccess.get_radio_info(cursor)
+        assert len(radios) == 1
+        assert radios[0]['freq'] == 0  # Default
 
-    def test_radioinfo_non_numeric_radio_nr_raises_error(self, test_db):
-        """Test RadioInfo with non-numeric RadioNr raises ValueError."""
+    def test_radioinfo_non_numeric_radio_nr_uses_default(self, test_db):
+        """Test RadioInfo with non-numeric RadioNr uses default 1."""
         conn, cursor, operators, stations, parser, seen = test_db
         xml = b'''<RadioInfo>
             <StationName>Station1</StationName>
             <RadioNr>abc</RadioNr>
             <Freq>1402500</Freq>
         </RadioInfo>'''
-        with pytest.raises(ValueError):
-            process_message(parser, conn, cursor, operators, stations, xml, seen)
+        # Should not raise - uses default value
+        process_message(parser, conn, cursor, operators, stations, xml, seen)
+        radios = dataaccess.get_radio_info(cursor)
+        assert len(radios) == 1
+        assert radios[0]['radio_nr'] == 1  # Default
 
     def test_unknown_message_type_ignored(self, test_db):
         """Test unknown message type is logged but doesn't raise."""
@@ -640,36 +653,39 @@ class TestProcessMessageMalformed:
         cursor.execute('SELECT COUNT(*) FROM qso_log')
         assert cursor.fetchone()[0] == 0
 
-    def test_contactdelete_missing_id_raises_error(self, test_db):
-        """Test contactdelete without ID or checksum fields raises KeyError."""
+    def test_contactdelete_missing_id_skipped(self, test_db):
+        """Test contactdelete without ID or checksum fields is skipped gracefully."""
         conn, cursor, operators, stations, parser, seen = test_db
         # contactdelete with no ID and no fields for checksum
         xml = b'''<contactdelete>
             <someotherfield>value</someotherfield>
         </contactdelete>'''
-        # Will try to compute checksum from missing fields
-        with pytest.raises(KeyError):
-            process_message(parser, conn, cursor, operators, stations, xml, seen)
+        # Should not raise - just logs warning and skips
+        process_message(parser, conn, cursor, operators, stations, xml, seen)
 
-    def test_truly_malformed_xml_raises_expat_error(self, test_db):
-        """Test truly malformed XML (mismatched tags) raises ExpatError."""
+    def test_truly_malformed_xml_skipped(self, test_db):
+        """Test truly malformed XML (mismatched tags) is skipped gracefully."""
         conn, cursor, operators, stations, parser, seen = test_db
-        # Mismatched tags - this actually raises ExpatError
+        # Mismatched tags - caught by XML parser, logged and skipped
         malformed = b'<contactinfo><call>W1AW</band></contactinfo>'
-        with pytest.raises(ExpatError):
-            process_message(parser, conn, cursor, operators, stations, malformed, seen)
+        # Should not raise - just logs warning and skips
+        process_message(parser, conn, cursor, operators, stations, malformed, seen)
+        cursor.execute('SELECT COUNT(*) FROM qso_log')
+        assert cursor.fetchone()[0] == 0
 
-    def test_truncated_xml_causes_keyerror_from_missing_fields(self, test_db):
-        """Test truncated XML with partial data causes KeyError from missing fields.
+    def test_truncated_xml_skipped(self, test_db):
+        """Test truncated XML with partial data is skipped gracefully.
 
         Note: The expat parser is lenient and returns partial data from truncated XML.
-        This then causes a KeyError when trying to process the incomplete data.
+        The validation now catches missing required fields and skips the message.
         """
         conn, cursor, operators, stations, parser, seen = test_db
-        # Truncated - parser returns partial data, then checksum fails
+        # Truncated - parser returns partial data, validation catches missing fields
         malformed = b'<contactinfo><call>W1AW</call>'
-        with pytest.raises(KeyError):
-            process_message(parser, conn, cursor, operators, stations, malformed, seen)
+        # Should not raise - just logs warning and skips
+        process_message(parser, conn, cursor, operators, stations, malformed, seen)
+        cursor.execute('SELECT COUNT(*) FROM qso_log')
+        assert cursor.fetchone()[0] == 0
 
     def test_truncated_xml_without_close_bracket_is_ignored(self, test_db):
         """Test truncated XML without closing bracket is treated as unknown message.
@@ -706,8 +722,8 @@ class TestProcessMessageMalformed:
         row = cursor.fetchone()
         assert row[0] == ''  # Empty but recorded
 
-    def test_contactinfo_negative_frequency(self, test_db):
-        """Test contactinfo with negative frequency is accepted (no validation)."""
+    def test_contactinfo_negative_frequency_rejected(self, test_db):
+        """Test contactinfo with negative frequency is rejected."""
         conn, cursor, operators, stations, parser, seen = test_db
         xml = b'''<contactinfo>
             <timestamp>2024-06-22 18:30:45</timestamp>
@@ -722,11 +738,10 @@ class TestProcessMessageMalformed:
             <contestnr>1</contestnr>
             <ID>test-neg-freq</ID>
         </contactinfo>'''
-        # Negative frequency is technically invalid but int() will accept it
+        # Negative frequency is now validated and rejected
         process_message(parser, conn, cursor, operators, stations, xml, seen)
-        cursor.execute('SELECT rx_freq FROM qso_log')
-        row = cursor.fetchone()
-        assert row[0] == -1000  # -100 * 10
+        cursor.execute('SELECT COUNT(*) FROM qso_log')
+        assert cursor.fetchone()[0] == 0
 
     def test_radioinfo_uses_netbiosname_fallback(self, test_db):
         """Test RadioInfo uses NetBiosName when StationName missing."""
@@ -798,8 +813,8 @@ class TestProcessMessageMalformed:
         # Should be a numeric string (from int checksum)
         assert row[0].isdigit() or row[0].lstrip('-').isdigit()
 
-    def test_contactinfo_float_frequency_raises_error(self, test_db):
-        """Test contactinfo with float frequency raises ValueError."""
+    def test_contactinfo_float_frequency_skipped(self, test_db):
+        """Test contactinfo with float frequency is skipped gracefully."""
         conn, cursor, operators, stations, parser, seen = test_db
         xml = b'''<contactinfo>
             <timestamp>2024-06-22 18:30:45</timestamp>
@@ -814,5 +829,7 @@ class TestProcessMessageMalformed:
             <contestnr>1</contestnr>
             <ID>test-float</ID>
         </contactinfo>'''
-        with pytest.raises(ValueError):
-            process_message(parser, conn, cursor, operators, stations, xml, seen)
+        # Should not raise - just logs warning and skips
+        process_message(parser, conn, cursor, operators, stations, xml, seen)
+        cursor.execute('SELECT COUNT(*) FROM qso_log')
+        assert cursor.fetchone()[0] == 0
