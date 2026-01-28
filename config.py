@@ -80,8 +80,9 @@ class Config(metaclass = Singleton):
                    )
 
         # Suppress noisy third-party library logging
+        self.LIB_LOG_LEVEL = cfg.get('GLOBAL', 'LIB_LOG_LEVEL', fallback='WARNING')
         for lib in ['matplotlib', 'PIL', 'cartopy', 'pygame', 'fiona', 'shapely', 'pyproj']:
-            logging.getLogger(lib).setLevel(logging.WARNING)
+            logging.getLogger(lib).setLevel(self.LIB_LOG_LEVEL)
 
         logging.info ('Reading config file @ %s' % (readCFGName))
         

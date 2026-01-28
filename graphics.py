@@ -465,6 +465,9 @@ def qso_rates_graph(size, qsos_per_hour):
         else:
             start_date = matplotlib.dates.date2num(config.EVENT_START_TIME)
             end_date = matplotlib.dates.date2num(config.EVENT_END_TIME)
+        # Ensure minimum 1-day span to prevent HourLocator from generating excessive ticks
+        if end_date - start_date < 1.0:
+            end_date = start_date + 1.0
         ax.set_xlim(start_date, end_date)
 
         ax.stackplot(dates, qso_counts[1], qso_counts[2], qso_counts[3], qso_counts[4], qso_counts[5], qso_counts[6],
