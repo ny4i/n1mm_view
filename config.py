@@ -8,6 +8,7 @@ __author__ = 'Tom Schaefer NY4I'
 __copyright__ = 'Copyright 2024 Thomas M. Schaefer'
 __license__ = 'Simplified BSD'
 
+VERSION = '2.1.0'
 
 import configparser
 import logging
@@ -139,9 +140,10 @@ class Config(metaclass = Singleton):
 
         # Feature toggles - new features default to False to preserve original behavior
         self.SHOW_RADIO_INFO = cfg.getboolean('FEATURES', 'SHOW_RADIO_INFO', fallback=False)
+        self.SHOW_RADIO_SIDEBAR = cfg.getboolean('FEATURES', 'SHOW_RADIO_SIDEBAR', fallback=False)
         self.SHOW_MULT_PROGRESS = cfg.getboolean('FEATURES', 'SHOW_MULT_PROGRESS', fallback=False)
         self.SHOW_MULT_REMAINING = cfg.getboolean('FEATURES', 'SHOW_MULT_REMAINING', fallback=False)
         self.SHOW_MULT_ALERT = cfg.getboolean('FEATURES', 'SHOW_MULT_ALERT', fallback=False)
         self.SHOW_OPERATOR_LEADERBOARD = cfg.getboolean('FEATURES', 'SHOW_OPERATOR_LEADERBOARD', fallback=False)
-        logging.info('Feature toggles: RADIO_INFO=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, OPERATOR_LEADERBOARD=%s',
-                     self.SHOW_RADIO_INFO, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_OPERATOR_LEADERBOARD)
+        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, OPERATOR_LEADERBOARD=%s',
+                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_OPERATOR_LEADERBOARD)

@@ -14,7 +14,7 @@ import sys
 import time
 #import subprocess
 
-from config import Config
+from config import Config, VERSION
 import constants
 import dataaccess
 import graphics
@@ -324,7 +324,7 @@ def write_index_html(image_dir):
 
     # Sidebar content - always visible
     sidebar_radio = ''
-    if config.SHOW_RADIO_INFO:
+    if config.SHOW_RADIO_SIDEBAR:
         sidebar_radio = '''
       <div class="sidebar-section">
         <h3>Radio Status</h3>
@@ -521,7 +521,7 @@ def write_index_html(image_dir):
 </div>
 
 <footer>
-  Powered by n1mm_view &mdash; N1KDO &amp; NY4I
+  Powered by n1mm_view v{VERSION} &mdash; N1KDO &amp; NY4I
 </footer>
 
 <script>
