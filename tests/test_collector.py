@@ -771,6 +771,34 @@ class TestProcessMessageMalformed:
         assert radios[0]['is_running'] == 0  # Default False
         assert radios[0]['is_transmitting'] == 0  # Default False
 
+    def test_radioinfo_is_active_when_active_radio(self, test_db):
+        """Test RadioInfo sets is_active=1 when RadioNr matches ActiveRadioNr."""
+        conn, cursor, operators, stations, parser, seen = test_db
+        xml = b'''<RadioInfo>
+            <StationName>Station1</StationName>
+            <RadioNr>1</RadioNr>
+            <ActiveRadioNr>1</ActiveRadioNr>
+            <Freq>1402500</Freq>
+        </RadioInfo>'''
+        process_message(parser, conn, cursor, operators, stations, xml, seen)
+        radios = dataaccess.get_radio_info(cursor)
+        assert len(radios) == 1
+        assert radios[0]['is_active'] == 1
+
+    def test_radioinfo_not_active_when_different_active_radio(self, test_db):
+        """Test RadioInfo sets is_active=0 when RadioNr differs from ActiveRadioNr."""
+        conn, cursor, operators, stations, parser, seen = test_db
+        xml = b'''<RadioInfo>
+            <StationName>Station1</StationName>
+            <RadioNr>2</RadioNr>
+            <ActiveRadioNr>1</ActiveRadioNr>
+            <Freq>700000</Freq>
+        </RadioInfo>'''
+        process_message(parser, conn, cursor, operators, stations, xml, seen)
+        radios = dataaccess.get_radio_info(cursor)
+        assert len(radios) == 1
+        assert radios[0]['is_active'] == 0
+
     def test_contactinfo_with_id_containing_dashes(self, test_db):
         """Test contactinfo ID with dashes gets dashes removed."""
         conn, cursor, operators, stations, parser, seen = test_db

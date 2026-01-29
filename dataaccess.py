@@ -77,16 +77,38 @@ def create_tables(db, cursor):
                    '     is_transmitting INTEGER NOT NULL DEFAULT 0,\n'
                    '     is_connected INTEGER NOT NULL DEFAULT 0,\n'
                    '     is_split     INTEGER NOT NULL DEFAULT 0,\n'
+                   '     is_active    INTEGER NOT NULL DEFAULT 0,\n'
                    '     radio_name   CHAR(32),\n'
                    '     antenna      INTEGER,\n'
                    '     last_update  INTEGER NOT NULL,\n'
                    '     PRIMARY KEY (station_name, radio_nr));')
 
+    # Migration: add is_active column to existing databases
+    try:
+        cursor.execute('ALTER TABLE radio_info ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0;')
+        db.commit()
+        logging.info('Added is_active column to radio_info table')
+    except Exception:
+        pass  # column already exists
+
     db.commit()
 
 
+def clear_radio_info(db, cursor):
+    """
+    Clear all radio info entries. Called on collector startup so only
+    active radios from the current session are tracked.
+    """
+    try:
+        cursor.execute('DELETE FROM radio_info;')
+        db.commit()
+        logging.info('Cleared radio_info table')
+    except Exception as err:
+        logging.warning('clear_radio_info failed: %s' % str(err))
+
+
 def record_radio_info(db, cursor, station_name, radio_nr, freq, tx_freq, mode, op_call,
-                      is_running, is_transmitting, is_connected, is_split,
+                      is_running, is_transmitting, is_connected, is_split, is_active,
                       radio_name, antenna, last_update):
     """
     record or update radio info for a station/radio
@@ -95,11 +117,11 @@ def record_radio_info(db, cursor, station_name, radio_nr, freq, tx_freq, mode, o
         cursor.execute(
             'INSERT OR REPLACE INTO radio_info\n'
             '    (station_name, radio_nr, freq, tx_freq, mode, op_call,\n'
-            '     is_running, is_transmitting, is_connected, is_split,\n'
+            '     is_running, is_transmitting, is_connected, is_split, is_active,\n'
             '     radio_name, antenna, last_update)\n'
-            '    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
+            '    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
             (station_name, radio_nr, freq, tx_freq, mode, op_call,
-             is_running, is_transmitting, is_connected, is_split,
+             is_running, is_transmitting, is_connected, is_split, is_active,
              radio_name, antenna, last_update))
         db.commit()
     except Exception as err:
@@ -113,7 +135,7 @@ def get_radio_info(cursor):
     try:
         cursor.execute('SELECT station_name, radio_nr, freq, tx_freq, mode, op_call,\n'
                        '       is_running, is_transmitting, is_connected, is_split,\n'
-                       '       radio_name, antenna, last_update\n'
+                       '       is_active, radio_name, antenna, last_update\n'
                        'FROM radio_info ORDER BY station_name, radio_nr;')
         radios = []
         for row in cursor:
@@ -128,9 +150,10 @@ def get_radio_info(cursor):
                 'is_transmitting': row[7],
                 'is_connected': row[8],
                 'is_split': row[9],
-                'radio_name': row[10],
-                'antenna': row[11],
-                'last_update': row[12],
+                'is_active': row[10],
+                'radio_name': row[11],
+                'antenna': row[12],
+                'last_update': row[13],
             })
         return radios
     except Exception:

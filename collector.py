@@ -327,9 +327,16 @@ def _process_radio_info(data, db, cursor):
     radio_name = data.get('RadioName', '')
     last_update = int(time.time())
 
+    # Check if this radio is the active one
+    try:
+        active_radio_nr = int(data.get('ActiveRadioNr', '0'))
+    except ValueError:
+        active_radio_nr = 0
+    is_active = 1 if radio_nr == active_radio_nr else 0
+
     dataaccess.record_radio_info(db, cursor, station_name, radio_nr, freq, tx_freq,
                                  mode, op_call, is_running, is_transmitting,
-                                 is_connected, is_split, radio_name, antenna,
+                                 is_connected, is_split, is_active, radio_name, antenna,
                                  last_update)
 
 
@@ -363,6 +370,7 @@ def message_processor(q, event):
     try:
         cursor = db.cursor()
         dataaccess.create_tables(db, cursor)
+        dataaccess.clear_radio_info(db, cursor)
 
         operators = Operators(db, cursor)
         stations = Stations(db, cursor)

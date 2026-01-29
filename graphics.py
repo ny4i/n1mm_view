@@ -775,6 +775,8 @@ def draw_radio_info(size, radios):
         surf.blit(left_surf, (inner_x, text_y))
 
         right_parts = []
+        if radio.get('is_active'):
+            right_parts.append('ACTIVE')
         if radio['is_transmitting']:
             right_parts.append('TX')
         if radio['is_connected']:

@@ -131,6 +131,7 @@ class TestRadioInfo:
             is_transmitting=0,
             is_connected=1,
             is_split=0,
+            is_active=1,
             radio_name='IC-7300',
             antenna=1,
             last_update=now
@@ -141,6 +142,7 @@ class TestRadioInfo:
         assert radios[0]['station_name'] == 'Station1'
         assert radios[0]['freq'] == 14250000
         assert radios[0]['mode'] == 'CW'
+        assert radios[0]['is_active'] == 1
 
     def test_update_radio_info(self, db):
         """Test updating existing radio info (upsert)."""
@@ -153,7 +155,7 @@ class TestRadioInfo:
             station_name='Station1', radio_nr=1,
             freq=14250000, tx_freq=14250000, mode='CW', op_call='W1AW',
             is_running=1, is_transmitting=0, is_connected=1, is_split=0,
-            radio_name='IC-7300', antenna=1, last_update=now
+            is_active=1, radio_name='IC-7300', antenna=1, last_update=now
         )
 
         # Update same station/radio
@@ -162,7 +164,7 @@ class TestRadioInfo:
             station_name='Station1', radio_nr=1,
             freq=7125000, tx_freq=7125000, mode='SSB', op_call='K1ABC',
             is_running=1, is_transmitting=1, is_connected=1, is_split=0,
-            radio_name='IC-7300', antenna=1, last_update=now + 10
+            is_active=0, radio_name='IC-7300', antenna=1, last_update=now + 10
         )
 
         radios = dataaccess.get_radio_info(cursor)
@@ -170,6 +172,7 @@ class TestRadioInfo:
         assert radios[0]['freq'] == 7125000
         assert radios[0]['mode'] == 'SSB'
         assert radios[0]['op_call'] == 'K1ABC'
+        assert radios[0]['is_active'] == 0
 
     def test_multiple_radios(self, db):
         """Test multiple radios are returned in order."""
@@ -182,7 +185,7 @@ class TestRadioInfo:
             station_name='Station2', radio_nr=1,
             freq=7000000, tx_freq=7000000, mode='CW', op_call='N1KDO',
             is_running=1, is_transmitting=0, is_connected=1, is_split=0,
-            radio_name='FT-991A', antenna=1, last_update=now
+            is_active=0, radio_name='FT-991A', antenna=1, last_update=now
         )
 
         dataaccess.record_radio_info(
@@ -190,7 +193,7 @@ class TestRadioInfo:
             station_name='Station1', radio_nr=1,
             freq=14000000, tx_freq=14000000, mode='SSB', op_call='W1AW',
             is_running=1, is_transmitting=0, is_connected=1, is_split=0,
-            radio_name='IC-7300', antenna=1, last_update=now
+            is_active=1, radio_name='IC-7300', antenna=1, last_update=now
         )
 
         radios = dataaccess.get_radio_info(cursor)
@@ -198,10 +201,42 @@ class TestRadioInfo:
         # Should be ordered by station_name
         assert radios[0]['station_name'] == 'Station1'
         assert radios[1]['station_name'] == 'Station2'
+        assert radios[0]['is_active'] == 1
+        assert radios[1]['is_active'] == 0
 
     def test_get_radio_info_empty(self, db):
         """Test get_radio_info returns empty list when no radios."""
         conn, cursor = db
+        radios = dataaccess.get_radio_info(cursor)
+        assert radios == []
+
+    def test_clear_radio_info(self, db):
+        """Test clear_radio_info removes all radio entries."""
+        conn, cursor = db
+        now = int(time.time())
+
+        # Add some radios
+        dataaccess.record_radio_info(
+            conn, cursor,
+            station_name='Station1', radio_nr=1,
+            freq=14000000, tx_freq=14000000, mode='CW', op_call='W1AW',
+            is_running=1, is_transmitting=0, is_connected=1, is_split=0,
+            is_active=1, radio_name='IC-7300', antenna=1, last_update=now
+        )
+        dataaccess.record_radio_info(
+            conn, cursor,
+            station_name='Station1', radio_nr=2,
+            freq=7000000, tx_freq=7000000, mode='SSB', op_call='W1AW',
+            is_running=0, is_transmitting=0, is_connected=1, is_split=0,
+            is_active=0, radio_name='IC-7610', antenna=2, last_update=now
+        )
+
+        # Verify radios exist
+        radios = dataaccess.get_radio_info(cursor)
+        assert len(radios) == 2
+
+        # Clear and verify empty
+        dataaccess.clear_radio_info(conn, cursor)
         radios = dataaccess.get_radio_info(cursor)
         assert radios == []
 
