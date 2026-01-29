@@ -42,9 +42,9 @@ GRAY = pygame.Color('#cccccc')
 pygame.font.init()
 view_font = pygame.font.Font('VeraMoBd.ttf', config.VIEW_FONT)
 bigger_font = pygame.font.SysFont('VeraMoBd.ttf', config.BIGGER_FONT)
-strip_freq_font = pygame.font.Font('VeraMoBd.ttf', 48)
-strip_label_font = pygame.font.Font('VeraMoBd.ttf', 24)
-strip_status_font = pygame.font.Font('VeraMoBd.ttf', 20)
+strip_freq_font = pygame.font.Font('VeraMoBd.ttf', 56)
+strip_label_font = pygame.font.Font('VeraMoBd.ttf', 30)
+strip_status_font = pygame.font.Font('VeraMoBd.ttf', 26)
 view_font_height = view_font.get_height()
 
 if matplotlib.__version__.startswith('3.6'):  # hack for raspberry pi.

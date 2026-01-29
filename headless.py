@@ -292,9 +292,9 @@ def write_index_html(image_dir):
     mult_title = constants.get_mult_title()
 
     # Build slides list - base slides always included
+    # Note: Radio Status and Recent QSOs are in the sidebar, not carousel
     slides = [
         (f'{mult_title} Map', 'sections_worked_map.png'),
-        ('Recent QSOs', 'last_qso_table.png'),
         ('QSO Summary', 'qso_summary_table.png'),
         ('QSO Rates', 'qso_rates_table.png'),
         ('QSO Rate Over Time', 'qso_rates_graph.png'),
@@ -308,9 +308,7 @@ def write_index_html(image_dir):
         ('QSOs by Category', 'qso_categories_graph.png'),
     ]
 
-    # Add optional slides based on config
-    if config.SHOW_RADIO_INFO:
-        slides.append(('Radio Status', 'radio_info.png'))
+    # Add optional slides based on config (radio_info is in sidebar)
     if config.SHOW_MULT_PROGRESS:
         slides.append(('Multiplier Progress', 'mults_progress.png'))
     if config.SHOW_MULT_REMAINING:
@@ -323,6 +321,15 @@ def write_index_html(image_dir):
         f'  <div class="slide"><h2>{title}</h2>\n    <img src="{img}" alt="{title}"></div>'
         for title, img in slides
     )
+
+    # Sidebar content - always visible
+    sidebar_radio = ''
+    if config.SHOW_RADIO_INFO:
+        sidebar_radio = '''
+      <div class="sidebar-section">
+        <h3>Radio Status</h3>
+        <img id="sidebar-radio" src="radio_info.png" alt="Radio Status">
+      </div>'''
 
     html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -351,6 +358,43 @@ def write_index_html(image_dir):
   header h1 {{
     font-size: 1.25rem;
     color: #e94560;
+  }}
+  .main-content {{
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    min-height: 0;
+  }}
+  .sidebar {{
+    width: 320px;
+    min-width: 280px;
+    background: #16213e;
+    border-right: 2px solid #0f3460;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }}
+  .sidebar-section {{
+    padding: 0.5rem;
+    border-bottom: 1px solid #0f3460;
+  }}
+  .sidebar-section h3 {{
+    font-size: 0.85rem;
+    color: #e94560;
+    margin-bottom: 0.4rem;
+    text-align: center;
+  }}
+  .sidebar-section img {{
+    width: 100%;
+    height: auto;
+    display: block;
+  }}
+  .carousel-container {{
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }}
   .carousel {{
     flex: 1;
@@ -432,6 +476,21 @@ def write_index_html(image_dir):
     color: #606080;
     flex-shrink: 0;
   }}
+  @media (max-width: 900px) {{
+    .sidebar {{ width: 240px; min-width: 200px; }}
+  }}
+  @media (max-width: 700px) {{
+    .main-content {{ flex-direction: column; }}
+    .sidebar {{
+      width: 100%;
+      max-height: 35vh;
+      border-right: none;
+      border-bottom: 2px solid #0f3460;
+      flex-direction: row;
+      flex-wrap: wrap;
+    }}
+    .sidebar-section {{ flex: 1; min-width: 150px; }}
+  }}
 </style>
 </head>
 <body>
@@ -440,14 +499,26 @@ def write_index_html(image_dir):
   <h1>{event_name}</h1>
 </header>
 
-<div class="carousel" id="carousel">
-  <button class="nav-btn prev" id="prev">&lsaquo;</button>
-  <button class="nav-btn next" id="next">&rsaquo;</button>
+<div class="main-content">
+  <div class="sidebar">
+{sidebar_radio}
+    <div class="sidebar-section">
+      <h3>Recent QSOs</h3>
+      <img id="sidebar-qsos" src="last_qso_table.png" alt="Recent QSOs">
+    </div>
+  </div>
+
+  <div class="carousel-container">
+    <div class="carousel" id="carousel">
+      <button class="nav-btn prev" id="prev">&lsaquo;</button>
+      <button class="nav-btn next" id="next">&rsaquo;</button>
 
 {slides_html}
-</div>
+    </div>
 
-<div class="dots" id="dots"></div>
+    <div class="dots" id="dots"></div>
+  </div>
+</div>
 
 <footer>
   Powered by n1mm_view &mdash; N1KDO &amp; NY4I
@@ -460,6 +531,7 @@ def write_index_html(image_dir):
   var cur = 0;
   var dwell = {dwell} * 1000;
   var timer;
+  var sidebarRefresh = 15000; // refresh sidebar images every 15 seconds
 
   // build dots
   for (var i = 0; i < slides.length; i++) {{
@@ -486,7 +558,7 @@ def write_index_html(image_dir):
 
   function advance() {{
     show(cur + 1);
-    // reload images when we wrap around to bust cache
+    // reload carousel images when we wrap around to bust cache
     if (cur === 0) {{
       var t = Date.now();
       slides.forEach(function(s) {{
@@ -500,6 +572,16 @@ def write_index_html(image_dir):
     clearInterval(timer);
     timer = setInterval(advance, dwell);
   }}
+
+  // Refresh sidebar images periodically
+  function refreshSidebar() {{
+    var t = Date.now();
+    var radioImg = document.getElementById('sidebar-radio');
+    var qsosImg = document.getElementById('sidebar-qsos');
+    if (radioImg) radioImg.src = radioImg.src.split('?')[0] + '?t=' + t;
+    if (qsosImg) qsosImg.src = qsosImg.src.split('?')[0] + '?t=' + t;
+  }}
+  setInterval(refreshSidebar, sidebarRefresh);
 
   document.getElementById('prev').addEventListener('click', function() {{ go(cur - 1); }});
   document.getElementById('next').addEventListener('click', function() {{ go(cur + 1); }});
