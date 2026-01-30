@@ -26,6 +26,8 @@ __copyright__ = 'Copyright 2016, 2019, 2021, 2024, 2025 Jeffrey B. Otterson and 
 __license__ = 'Simplified BSD'
 
 config = Config()
+
+# UI Colors
 RED = pygame.Color('#ff0000')
 GREEN = pygame.Color('#33cc33')
 BLUE = pygame.Color('#3333cc')
@@ -37,14 +39,25 @@ ORANGE = pygame.Color('#ff9900')
 BLACK = pygame.Color('#000000')
 WHITE = pygame.Color('#ffffff')
 GRAY = pygame.Color('#cccccc')
+DARK_GRAY = pygame.Color('#666666')
+
+# Map colors (used with matplotlib, not pygame)
+MAP_OCEAN_COLOR = '#000080'
+MAP_LAKE_COLOR = '#000080'
+MAP_LAND_COLOR = '#113311'
+
+# Radio strip font sizes
+STRIP_FREQ_FONT_SIZE = 96
+STRIP_LABEL_FONT_SIZE = 52
+STRIP_STATUS_FONT_SIZE = 44
 
 # Initialize font support
 pygame.font.init()
 view_font = pygame.font.Font('VeraMoBd.ttf', config.VIEW_FONT)
 bigger_font = pygame.font.SysFont('VeraMoBd.ttf', config.BIGGER_FONT)
-strip_freq_font = pygame.font.Font('VeraMoBd.ttf', 96)
-strip_label_font = pygame.font.Font('VeraMoBd.ttf', 52)
-strip_status_font = pygame.font.Font('VeraMoBd.ttf', 44)
+strip_freq_font = pygame.font.Font('VeraMoBd.ttf', STRIP_FREQ_FONT_SIZE)
+strip_label_font = pygame.font.Font('VeraMoBd.ttf', STRIP_LABEL_FONT_SIZE)
+strip_status_font = pygame.font.Font('VeraMoBd.ttf', STRIP_STATUS_FONT_SIZE)
 view_font_height = view_font.get_height()
 
 if matplotlib.__version__.startswith('3.6'):  # hack for raspberry pi.
@@ -644,10 +657,10 @@ def draw_radio_info(size, radios):
     surf = pygame.Surface((surface_width, surface_height))
     surf.fill(BLACK)
 
-    # Colors
+    # Colors for radio info display
     border_tx = RED
     border_default = GRAY
-    dim_color = pygame.Color('#666666')
+    dim_color = DARK_GRAY
     title_color = WHITE
     label_color = WHITE
     freq_color = GREEN
@@ -917,7 +930,8 @@ def draw_mults_progress(size, qsos_by_mult):
 
 def draw_mults_remaining(size, qsos_by_mult):
     """
-    Draw a multi-column table of unworked multipliers.
+    Draw a multi-column table of all multipliers.
+    Worked mults shown dimmed, unworked mults shown bright.
     Title shows count remaining.
     Returns (raw_data, size) or (None, (0,0)) if no data.
     """
@@ -928,8 +942,11 @@ def draw_mults_remaining(size, qsos_by_mult):
     if qsos_by_mult is None:
         qsos_by_mult = {}
 
-    # Find unworked mults
-    unworked = sorted([code for code in mult_dict.keys() if qsos_by_mult.get(code, 0) == 0])
+    # Get all mults sorted, track which are worked
+    all_mults = sorted(mult_dict.keys())
+    worked_set = {code for code in all_mults if qsos_by_mult.get(code, 0) > 0}
+    num_worked = len(worked_set)
+    num_remaining = len(all_mults) - num_worked
 
     # Get actual font heights
     title_font = view_font
@@ -938,9 +955,10 @@ def draw_mults_remaining(size, qsos_by_mult):
     cell_height = cell_font.get_height() + 8
     padding = 20
 
-    if len(unworked) == 0:
+    mult_type = 'States' if config.MULTS == 'STATES' else 'Sections'
+
+    if num_remaining == 0:
         # All mults worked - show congratulations
-        mult_type = 'States' if config.MULTS == 'STATES' else 'Sections'
         title = f'All {mult_type} Worked!'
         title_surf = bigger_font.render(title, True, GREEN)
 
@@ -958,26 +976,27 @@ def draw_mults_remaining(size, qsos_by_mult):
         raw_data = pygame.image.tostring(surf, image_format)
         return raw_data, result_size
 
-    # Calculate layout
-    mult_type = 'States' if config.MULTS == 'STATES' else 'Sections'
-    title = f'{len(unworked)} {mult_type} Remaining'
+    # Calculate layout - show ALL mults
+    title = f'{num_remaining} {mult_type} Remaining'
 
     # Calculate cell width based on widest code + padding
-    max_code_width = max(cell_font.size(code)[0] for code in unworked)
+    max_code_width = max(cell_font.size(code)[0] for code in all_mults)
     cell_width = max_code_width + 30  # Add padding between codes
 
-    # Determine columns based on count
-    num_unworked = len(unworked)
-    if num_unworked <= 10:
+    # Determine columns based on total count
+    num_mults = len(all_mults)
+    if num_mults <= 10:
         num_cols = 2
-    elif num_unworked <= 20:
+    elif num_mults <= 20:
         num_cols = 3
-    elif num_unworked <= 40:
+    elif num_mults <= 40:
         num_cols = 4
-    else:
+    elif num_mults <= 60:
         num_cols = 5
+    else:
+        num_cols = 6
 
-    num_rows = (num_unworked + num_cols - 1) // num_cols
+    num_rows = (num_mults + num_cols - 1) // num_cols
 
     # Calculate sizes
     table_width = num_cols * cell_width
@@ -1001,16 +1020,18 @@ def draw_mults_remaining(size, qsos_by_mult):
     title_rect.y = title_y
     surf.blit(title_surf, title_rect)
 
-    # Draw grid of unworked mults
+    # Draw grid of ALL mults - bright for unworked, dim for worked
     start_x = (surface_width - table_width) // 2
 
-    for i, code in enumerate(unworked):
+    for i, code in enumerate(all_mults):
         col = i % num_cols
         row = i // num_cols
         x = start_x + col * cell_width
         y = grid_y + row * cell_height
 
-        code_surf = cell_font.render(code, True, GRAY)
+        # Unworked = bright white, Worked = dim gray
+        color = DARK_GRAY if code in worked_set else WHITE
+        code_surf = cell_font.render(code, True, color)
         code_rect = code_surf.get_rect()
         code_rect.centerx = x + cell_width // 2
         code_rect.y = y
@@ -1067,9 +1088,9 @@ def draw_map(size, qsos_by_section):
     projection = ccrs.PlateCarree()
     ax = fig.add_axes([0, 0, 1, 1], projection=projection)
     ax.set_extent([-168, -52, 10, 60], ccrs.Geodetic())
-    ax.add_feature(cfeature.OCEAN, color='#000080')
-    ax.add_feature(cfeature.LAKES, color='#000080')
-    ax.add_feature(cfeature.LAND, color='#113311')
+    ax.add_feature(cfeature.OCEAN, color=MAP_OCEAN_COLOR)
+    ax.add_feature(cfeature.LAKES, color=MAP_LAKE_COLOR)
+    ax.add_feature(cfeature.LAND, color=MAP_LAND_COLOR)
 
     ax.coastlines('50m')
     ax.annotate(get_mult_title(), xy=(0.5, 1), xycoords='axes fraction', ha='center', va='top',

@@ -27,8 +27,22 @@ config = Config()
 #logging.basicConfig(format='%(asctime)s.%(msecs)03d %(levelname)-8s %(module)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S',
 #                    level=config.LOG_LEVEL)
 #logging.Formatter.converter = time.gmtime
-logger = logging.getLogger(__name__) 
+logger = logging.getLogger(__name__)
 logging.debug('Getting started here in headless.py')
+
+# Web interface theme colors
+THEME = {
+    'bg_primary': '#1a1a2e',      # Main background
+    'bg_secondary': '#16213e',    # Header/sidebar background
+    'border': '#0f3460',          # Border color
+    'accent': '#e94560',          # Accent/highlight color
+    'text_primary': '#e0e0e0',    # Main text color
+    'text_secondary': '#a0a0b8',  # Secondary text color
+    'text_muted': '#606080',      # Muted/footer text
+    'dot_inactive': '#0f3460',    # Carousel dot inactive
+    'sidebar_width': '350px',     # Sidebar width
+    'sidebar_min_width': '310px', # Sidebar minimum width
+}
 
 def makePNGTitle(image_dir, title):
     if image_dir is None:
@@ -331,6 +345,7 @@ def write_index_html(image_dir):
         <img id="sidebar-radio" src="radio_info.png" alt="Radio Status">
       </div>'''
 
+    t = THEME  # Shorthand for template
     html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -341,23 +356,23 @@ def write_index_html(image_dir):
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: #1a1a2e;
-    color: #e0e0e0;
+    background: {t['bg_primary']};
+    color: {t['text_primary']};
     overflow: hidden;
     height: 100vh;
     display: flex;
     flex-direction: column;
   }}
   header {{
-    background: #16213e;
+    background: {t['bg_secondary']};
     padding: 0.6rem 1rem;
     text-align: center;
-    border-bottom: 3px solid #0f3460;
+    border-bottom: 3px solid {t['border']};
     flex-shrink: 0;
   }}
   header h1 {{
     font-size: 1.25rem;
-    color: #e94560;
+    color: {t['accent']};
   }}
   .main-content {{
     flex: 1;
@@ -366,10 +381,10 @@ def write_index_html(image_dir):
     min-height: 0;
   }}
   .sidebar {{
-    width: 320px;
-    min-width: 280px;
-    background: #16213e;
-    border-right: 2px solid #0f3460;
+    width: {t['sidebar_width']};
+    min-width: {t['sidebar_min_width']};
+    background: {t['bg_secondary']};
+    border-right: 2px solid {t['border']};
     display: flex;
     flex-direction: column;
     overflow-y: auto;
@@ -377,11 +392,11 @@ def write_index_html(image_dir):
   }}
   .sidebar-section {{
     padding: 0.5rem;
-    border-bottom: 1px solid #0f3460;
+    border-bottom: 1px solid {t['border']};
   }}
   .sidebar-section h3 {{
     font-size: 0.85rem;
-    color: #e94560;
+    color: {t['accent']};
     margin-bottom: 0.4rem;
     text-align: center;
   }}
@@ -422,7 +437,7 @@ def write_index_html(image_dir):
   .slide h2 {{
     font-size: 1rem;
     padding: 0.4rem 0;
-    color: #a0a0b8;
+    color: {t['text_secondary']};
     flex-shrink: 0;
   }}
   .slide img {{
@@ -435,7 +450,7 @@ def write_index_html(image_dir):
     top: 50%;
     transform: translateY(-50%);
     background: rgba(15, 52, 96, 0.7);
-    color: #e0e0e0;
+    color: {t['text_primary']};
     border: none;
     font-size: 2rem;
     width: 3rem;
@@ -464,16 +479,16 @@ def write_index_html(image_dir):
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #0f3460;
+    background: {t['dot_inactive']};
     cursor: pointer;
     transition: background 0.3s;
   }}
-  .dot.active {{ background: #e94560; }}
+  .dot.active {{ background: {t['accent']}; }}
   footer {{
     text-align: center;
     padding: 0.3rem;
     font-size: 0.7rem;
-    color: #606080;
+    color: {t['text_muted']};
     flex-shrink: 0;
   }}
   @media (max-width: 900px) {{
@@ -485,7 +500,7 @@ def write_index_html(image_dir):
       width: 100%;
       max-height: 35vh;
       border-right: none;
-      border-bottom: 2px solid #0f3460;
+      border-bottom: 2px solid {t['border']};
       flex-direction: row;
       flex-wrap: wrap;
     }}
