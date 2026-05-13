@@ -111,7 +111,7 @@ class TestModes:
 
     def test_modes_count(self):
         """Test mode count."""
-        assert Modes.count() == 16
+        assert Modes.count() == 17
 
     def test_mode_to_simple_mode_alignment(self):
         """Test MODE_TO_SIMPLE_MODE has correct length."""

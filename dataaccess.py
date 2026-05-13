@@ -183,7 +183,12 @@ def record_contact_combined(db, cursor, operators, stations,
         rst_recv, exchange, section, comment, qso_id))
 
     if band_id is None or mode_id is None or operator_id is None or station_id is None:
-        logging.warning('[dataaccess] cannot log this QSO, bad data.')
+        reasons = []
+        if band_id is None: reasons.append(f'unknown band {band!r}')
+        if mode_id is None: reasons.append(f'unknown mode {mode!r}')
+        if operator_id is None: reasons.append(f'unknown operator {operator!r}')
+        if station_id is None: reasons.append(f'unknown station {station!r}')
+        logging.warning('cannot log QSO %s (call=%s): %s', qso_id, callsign, '; '.join(reasons))
         return
     try:
         cursor.execute(
@@ -219,7 +224,12 @@ def record_contact(db, cursor, operators, stations,
         rst_recv, exchange, section, comment, qso_id))
 
     if band_id is None or mode_id is None or operator_id is None or station_id is None:
-        logging.warning('cannot log this QSO, bad data.')
+        reasons = []
+        if band_id is None: reasons.append(f'unknown band {band!r}')
+        if mode_id is None: reasons.append(f'unknown mode {mode!r}')
+        if operator_id is None: reasons.append(f'unknown operator {operator!r}')
+        if station_id is None: reasons.append(f'unknown station {station!r}')
+        logging.warning('cannot log QSO %s (call=%s): %s', qso_id, callsign, '; '.join(reasons))
         return
     try:
         cursor.execute(
@@ -255,7 +265,12 @@ def update_contact(db, cursor, operators, stations,
         rst_recv, exchange, section, comment, qso_id))
 
     if band_id is None or mode_id is None or operator_id is None or station_id is None:
-        logging.warning('[dataaccess] cannot log this QSO, bad data.')
+        reasons = []
+        if band_id is None: reasons.append(f'unknown band {band!r}')
+        if mode_id is None: reasons.append(f'unknown mode {mode!r}')
+        if operator_id is None: reasons.append(f'unknown operator {operator!r}')
+        if station_id is None: reasons.append(f'unknown station {station!r}')
+        logging.warning('cannot update QSO %s (call=%s): %s', qso_id, callsign, '; '.join(reasons))
         return
     try:
         cursor.execute(
