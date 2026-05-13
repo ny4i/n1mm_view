@@ -7,3 +7,9 @@ config.ini
 *.jpg
 *.db.*
 *.db
+
+# Local post-contest analysis scripts (not part of the dashboard)
+/generate_charts.py
+/generate_comparison_charts.py
+/generate_section_comparison.py
+/fix_timeline_charts.py
