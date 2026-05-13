@@ -6,6 +6,7 @@ non-interactive version.  This creates files on the disk and updates them period
 """
 
 import gc
+import json
 import logging
 import os
 import re
@@ -304,6 +305,12 @@ def write_index_html(image_dir):
     event_name = config.EVENT_NAME
     dwell = config.DISPLAY_DWELL_TIME
     mult_title = constants.get_mult_title()
+    # EVENT_START_TIME / EVENT_END_TIME are naive UTC (compared against
+    # datetime.utcnow() in dashboard.py). Emit as ISO 8601 with Z so the
+    # browser parses them as UTC regardless of viewer locale.
+    start_iso = config.EVENT_START_TIME.strftime('%Y-%m-%dT%H:%M:%SZ')
+    end_iso = config.EVENT_END_TIME.strftime('%Y-%m-%dT%H:%M:%SZ')
+    event_name_json = json.dumps(event_name)
 
     # Build slides list - base slides always included
     # Note: Radio Status and Recent QSOs are in the sidebar, not carousel
@@ -366,13 +373,46 @@ def write_index_html(image_dir):
   header {{
     background: {t['bg_secondary']};
     padding: 0.6rem 1rem;
-    text-align: center;
     border-bottom: 3px solid {t['border']};
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
   }}
   header h1 {{
     font-size: 1.25rem;
     color: {t['accent']};
+    flex: 1 1 auto;
+    text-align: center;
+  }}
+  .clock {{
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+    color: {t['text_secondary']};
+    flex-shrink: 0;
+  }}
+  .clock .label {{
+    color: {t['text_muted']};
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-right: 0.25rem;
+  }}
+  .clock .countdown {{
+    color: {t['accent']};
+    font-weight: 600;
+  }}
+  .clock .countdown.urgent {{ color: #ff6666; }}
+  .clock .countdown.over {{ color: {t['text_muted']}; }}
+  @media (max-width: 700px) {{
+    header {{ justify-content: center; }}
+    header h1 {{ flex: 1 0 100%; }}
+    .clock {{ font-size: 0.75rem; gap: 0.6rem; }}
   }}
   .main-content {{
     flex: 1;
@@ -512,6 +552,11 @@ def write_index_html(image_dir):
 
 <header>
   <h1>{event_name}</h1>
+  <div class="clock">
+    <span><span class="label">UTC</span><span id="clk-utc">--:--:--</span></span>
+    <span><span class="label">Local</span><span id="clk-local">--:--:--</span></span>
+    <span class="countdown" id="clk-countdown">&mdash;</span>
+  </div>
 </header>
 
 <div class="main-content">
@@ -541,6 +586,48 @@ def write_index_html(image_dir):
 
 <script>
 (function() {{
+  // --- Clock + countdown ------------------------------------------------
+  var startMs = Date.parse('{start_iso}');
+  var endMs = Date.parse('{end_iso}');
+  var eventName = {event_name_json};
+  var utcEl = document.getElementById('clk-utc');
+  var localEl = document.getElementById('clk-local');
+  var cdEl = document.getElementById('clk-countdown');
+
+  function pad(n) {{ return (n < 10 ? '0' : '') + n; }}
+
+  function fmtDelta(ms) {{
+    var s = Math.floor(ms / 1000);
+    var d = Math.floor(s / 86400); s -= d * 86400;
+    var h = Math.floor(s / 3600); s -= h * 3600;
+    var m = Math.floor(s / 60); s -= m * 60;
+    return (d > 0 ? d + 'd ' : '') + pad(h) + ':' + pad(m) + ':' + pad(s);
+  }}
+
+  function tickClock() {{
+    var now = new Date();
+    utcEl.textContent =
+      pad(now.getUTCHours()) + ':' + pad(now.getUTCMinutes()) + ':' + pad(now.getUTCSeconds());
+    localEl.textContent =
+      pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+
+    var t = now.getTime();
+    cdEl.classList.remove('urgent', 'over');
+    if (t < startMs) {{
+      cdEl.textContent = 'Starts in ' + fmtDelta(startMs - t);
+      if (startMs - t < 3600000) cdEl.classList.add('urgent');
+    }} else if (t < endMs) {{
+      cdEl.textContent = 'Ends in ' + fmtDelta(endMs - t);
+      if (endMs - t < 3600000) cdEl.classList.add('urgent');
+    }} else {{
+      cdEl.textContent = eventName + ' is over';
+      cdEl.classList.add('over');
+    }}
+  }}
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  // --- Carousel ---------------------------------------------------------
   var slides = document.querySelectorAll('.slide');
   var dotsC = document.getElementById('dots');
   var cur = 0;
