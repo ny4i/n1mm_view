@@ -49,6 +49,17 @@ def create_tables(db, cursor):
                    '     state char(4),\n'
                    '     comment TEXT,\n'
                    '     qso_id  char(32) PRIMARY KEY NOT NULL);')  # this is primary key to speed up Update & Delete
+
+    # Migration: add state column to pre-existing databases. Must run before
+    # the qso_log_state index is created, otherwise CREATE INDEX fails on
+    # databases that predate the MULTS=STATES feature.
+    try:
+        cursor.execute('ALTER TABLE qso_log ADD COLUMN state char(4);')
+        db.commit()
+        logging.info('Added state column to qso_log table')
+    except Exception:
+        pass  # column already exists
+
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_band_id ON qso_log(band_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_mode_id ON qso_log(mode_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_operator_id ON qso_log(operator_id);')
@@ -57,14 +68,6 @@ def create_tables(db, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_state ON qso_log(state);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_qso_id ON qso_log(qso_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_qso_timestamp ON qso_log(timestamp);')
-
-    # Migration: add state column to existing databases
-    try:
-        cursor.execute('ALTER TABLE qso_log ADD COLUMN state char(4);')
-        db.commit()
-        logging.info('Added state column to qso_log table')
-    except Exception:
-        pass  # column already exists
 
     cursor.execute('CREATE TABLE IF NOT EXISTS radio_info\n'
                    '    (station_name CHAR(32) NOT NULL,\n'
