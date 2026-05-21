@@ -63,7 +63,25 @@ collector and dashboard processes start automatically at boot time. Note this as
 ### If running the headless script to generate images, install this service.
 3. `sudo systemctl enable n1mm_view_headless`
 
-Upon reboot, the collector and dashboard [and optionally headless] should start automatically.  
+### Optional: built-in web server (recommended for in-shack use)
+
+`webserver.py` is a small Flask app that serves `IMAGE_DIR` and exposes
+`/api/radio` as JSON so the dashboard page can show near-realtime radio
+status without waiting for the next PNG render cycle. It binds to
+`0.0.0.0:8080` by default (see the `[WEBSERVER]` section in
+`n1mm_view.ini.sample`), so the page is reachable on every interface the
+Pi has — useful for a Pi 400 with both wired and wifi at Field Day.
+
+1. `sudo cp init/n1mm_view_webserver.service /lib/systemd/system/`
+2. `sudo systemctl enable n1mm_view_webserver`
+3. `sudo systemctl start n1mm_view_webserver`
+
+Visitors browse to `http://<pi-ip>:8080/`. The same `index.html` is still
+copied out by `POST_FILE_COMMAND` (rsync); on remote copies `/api/radio`
+404s and the page falls back to the rsync'd `radio_info.png` automatically.
+
+Upon reboot, the collector and dashboard [and optionally headless + web
+server] should start automatically.  
 Consider this experimental at this time.  It might work. It works for me.
 
 ## Challenges, "Gotchas", and Caveat Emptor

@@ -39,8 +39,15 @@ QTH_LONGITUDE = -82.74670114956339
 
 [N1MM INFO]
 BROADCAST_PORT = 12060
-BROADCAST_ADDRESS = 192.168.1.255 
+BROADCAST_ADDRESS = 192.168.1.255
 LOG_FILE_NAME = FD2024-N4N.s3db
+; Comma-separated allow-list for the <app> XML field. Messages whose app
+; field is NOT in this list are dropped by the collector. Matching is
+; case-insensitive. Messages with no <app> field at all are always
+; accepted (back-compat). Leave empty to accept any sender.
+;   N1MMLogger.Net = N1MM Logger+   TR4W = TR4W   TR4QT = TR4W's QT build
+;   DXLab          = DXLab Suite (often emits RadioInfo too)
+ALLOWED_APPS = N1MMLogger.Net,TR4W
 
 [HEADLESS INFO]
 ; Set IMAGE_DIR to None or the name of a directory on the system to write files. Note if using a Pi with an SD card only, use the ramdisk setup in the install process.
@@ -49,6 +56,20 @@ IMAGE_DIR = None
 
 ; The POST_FILE_COMMAND is used is to execute this command. You can use it to call rsync or a script.
 #POST_FILE_COMMAND = rsync -avz /mnt/ramdisk/n1mm_view/html/* user@sshserver:www/n1mm_view/html
+
+[WEBSERVER]
+; Built-in Flask server that serves IMAGE_DIR and exposes /api/radio for
+; near-realtime radio status. Run via init/n1mm_view_webserver.service.
+; Disable if you'd rather serve IMAGE_DIR with Apache or another web server.
+ENABLED = True
+; 0.0.0.0 listens on every interface (wired + wifi). Use 127.0.0.1 to restrict
+; to local only.
+BIND = 0.0.0.0
+PORT = 8080
+; How often the browser polls /api/radio for live updates. Lower = more
+; responsive, higher = less load. The PNG sidebar fallback (used by rsync'd
+; remote copies) is not affected by this value.
+RADIO_POLL_SECONDS = 2
 
 [FONT INFO]
 # If font seems too big, try 60 for VIEW_FONT and 100 for BIGGER_FONT
@@ -67,3 +88,7 @@ SHOW_MULT_REMAINING = False
 SHOW_MULT_ALERT = False
 # Ranked operator leaderboard with positions and percentages
 SHOW_OPERATOR_LEADERBOARD = False
+# Hide radio_info rows older than this many seconds (clears stale entries
+# from past test sessions). Set to 0 to disable hiding. The 60-second
+# "dim" threshold in the renderer is separate and still applies.
+RADIO_HIDE_SECONDS = 600

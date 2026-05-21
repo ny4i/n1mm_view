@@ -155,6 +155,9 @@ def convert_timestamp(s):
     return time.strptime(s, '%Y-%m-%d %H:%M:%S')
 
 
+_dropped_apps_logged = set()
+
+
 def process_message(parser, db, cursor, operators, stations, message, seen):
     """
     Process a N1MM+ contactinfo message.
@@ -172,6 +175,22 @@ def process_message(parser, db, cursor, operators, stations, message, seen):
         logging.warning(f'Malformed XML in UDP message: {e}')
         logging.debug(f'Raw message: {message}')
         return
+
+    # App allow-list: drop messages whose <app> field is not in the
+    # configured set. Messages without an app field pass through.
+    allowed = getattr(config, 'ALLOWED_APPS', None)
+    if allowed:
+        sender = data.get('app')
+        if sender is not None and sender.strip().lower() not in allowed:
+            # Log the first drop per sender at INFO; subsequent at DEBUG.
+            key = sender.strip().lower()
+            if key not in _dropped_apps_logged:
+                _dropped_apps_logged.add(key)
+                logging.info('Dropping messages from app=%r (not in ALLOWED_APPS=%s)',
+                             sender, sorted(allowed))
+            else:
+                logging.debug('Dropped message from app=%r', sender)
+            return
 
     logging.debug(f'{data}')
     message_type = data.get('__messagetype__', '')

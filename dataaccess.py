@@ -110,6 +110,25 @@ def clear_radio_info(db, cursor):
         logging.warning('clear_radio_info failed: %s' % str(err))
 
 
+def purge_stale_radio_info(db, cursor, max_age_seconds):
+    """
+    Delete radio_info rows whose last_update is older than max_age_seconds.
+    Returns the number of rows deleted.
+    """
+    try:
+        cursor.execute(
+            'DELETE FROM radio_info WHERE last_update < (strftime(\'%s\',\'now\') - ?);',
+            (int(max_age_seconds),))
+        deleted = cursor.rowcount
+        db.commit()
+        logging.info('Purged %d stale radio_info row(s) older than %ds',
+                     deleted, max_age_seconds)
+        return deleted
+    except Exception as err:
+        logging.warning('purge_stale_radio_info failed: %s' % str(err))
+        return 0
+
+
 def record_radio_info(db, cursor, station_name, radio_nr, freq, tx_freq, mode, op_call,
                       is_running, is_transmitting, is_connected, is_split, is_active,
                       radio_name, antenna, last_update):

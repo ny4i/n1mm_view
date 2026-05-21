@@ -122,6 +122,22 @@ class Config(metaclass = Singleton):
         logging.info ('Listening on UDP port %d' % (self.N1MM_BROADCAST_PORT))
         self.N1MM_BROADCAST_ADDRESS = cfg.get('N1MM INFO','BROADCAST_ADDRESS')
         self.N1MM_LOG_FILE_NAME = cfg.get('N1MM INFO','LOG_FILE_NAME')
+
+        # Comma-separated allow-list for the <app> XML field. Messages whose
+        # app field is not in this set are dropped by the collector. Set to
+        # empty string to accept everything. Messages with no <app> field at
+        # all are always accepted (back-compat). Matching is case-insensitive.
+        # N1MM Logger+ uses "N1MMLogger.Net"; TR4W variants include "TR4W"
+        # and "TR4QT"; DXLab uses "DXLab".
+        allowed_apps_raw = cfg.get('N1MM INFO', 'ALLOWED_APPS',
+                                   fallback='N1MMLogger.Net,TR4W')
+        self.ALLOWED_APPS = {a.strip().lower()
+                             for a in allowed_apps_raw.split(',')
+                             if a.strip()}
+        if self.ALLOWED_APPS:
+            logging.info('App allow-list: %s', sorted(self.ALLOWED_APPS))
+        else:
+            logging.info('App allow-list is empty; accepting messages from any source.')
         
         self.QTH_LATITUDE = cfg.getfloat('EVENT INFO','QTH_LATITUDE')
         self.QTH_LONGITUDE = cfg.getfloat('EVENT INFO','QTH_LONGITUDE')
@@ -135,12 +151,26 @@ class Config(metaclass = Singleton):
         self.IMAGE_DIR = cfg.get('HEADLESS INFO','IMAGE_DIR',fallback='/mnt/ramdisk/n1mm_view/html')
         self.HEADLESS = cfg.getboolean('HEADLESS INFO','HEADLESS',fallback = False) #False
         self.POST_FILE_COMMAND = cfg.get('HEADLESS INFO','POST_FILE_COMMAND', fallback=None)
+
+        # Built-in HTTP server that serves IMAGE_DIR and exposes a /api/radio
+        # JSON endpoint for near-realtime sidebar updates. Disable if Apache or
+        # another web server is already serving the same directory.
+        self.WEBSERVER_ENABLED = cfg.getboolean('WEBSERVER', 'ENABLED', fallback=True)
+        self.WEBSERVER_BIND = cfg.get('WEBSERVER', 'BIND', fallback='0.0.0.0')
+        self.WEBSERVER_PORT = cfg.getint('WEBSERVER', 'PORT', fallback=8080)
+        # Browser poll interval for /api/radio, in seconds.
+        self.RADIO_POLL_SECONDS = cfg.getint('WEBSERVER', 'RADIO_POLL_SECONDS', fallback=2)
         self.VIEW_FONT = cfg.getint('FONT INFO','VIEW_FONT',fallback=64)
         self.BIGGER_FONT = cfg.getint('FONT INFO','BIGGER_FONT',fallback=180)
 
         # Feature toggles - new features default to False to preserve original behavior
         self.SHOW_RADIO_INFO = cfg.getboolean('FEATURES', 'SHOW_RADIO_INFO', fallback=False)
         self.SHOW_RADIO_SIDEBAR = cfg.getboolean('FEATURES', 'SHOW_RADIO_SIDEBAR', fallback=False)
+        # Hide radio_info rows whose last_update is older than this many
+        # seconds (drops leftover rows from previous test sessions). Used by
+        # webserver.py and graphics.draw_radio_info. The 60-second dim
+        # threshold in the display layer is independent of this value.
+        self.RADIO_HIDE_SECONDS = cfg.getint('FEATURES', 'RADIO_HIDE_SECONDS', fallback=600)
         self.SHOW_MULT_PROGRESS = cfg.getboolean('FEATURES', 'SHOW_MULT_PROGRESS', fallback=False)
         self.SHOW_MULT_REMAINING = cfg.getboolean('FEATURES', 'SHOW_MULT_REMAINING', fallback=False)
         self.SHOW_MULT_ALERT = cfg.getboolean('FEATURES', 'SHOW_MULT_ALERT', fallback=False)

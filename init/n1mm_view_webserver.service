@@ -1,0 +1,28 @@
+#
+# /lib/systemd/system/n1mm_view_webserver.service
+#
+# systemd startup file for the n1mm_view built-in HTTP server.
+# Serves IMAGE_DIR (PNG carousel + index.html) and a /api/radio JSON
+# endpoint so the browser sidebar can show near-realtime radio status.
+# Listens on the address/port set in the [WEBSERVER] section of
+# n1mm_view.ini (default 0.0.0.0:8080).
+#
+
+[Unit]
+Description=N1MM View Web Server
+After=network-online.target n1mm_view_headless.service
+Wants=network-online.target
+
+[Service]
+User=pi
+Group=pi
+Type=simple
+WorkingDirectory=/home/pi/n1mm_view
+ExecStart=/home/pi/n1mm_view/webserver.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

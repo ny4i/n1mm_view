@@ -647,10 +647,18 @@ def draw_radio_info(size, radios):
     if not radios:
         return None, (0, 0)
 
-    logging.debug('draw_radio_info()')
-
     now = int(_time.time())
     stale_threshold = 60  # seconds - clear frequency data after this
+
+    # Drop rows older than RADIO_HIDE_SECONDS so leftovers from previous
+    # test sessions don't clutter the display.
+    hide = getattr(config, 'RADIO_HIDE_SECONDS', 0)
+    if hide and hide > 0:
+        radios = [r for r in radios if (now - r['last_update']) <= hide]
+        if not radios:
+            return None, (0, 0)
+
+    logging.debug('draw_radio_info()')
 
     surface_width = size[0]
     surface_height = size[1]

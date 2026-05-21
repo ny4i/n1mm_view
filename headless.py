@@ -311,6 +311,7 @@ def write_index_html(image_dir):
     start_iso = config.EVENT_START_TIME.strftime('%Y-%m-%dT%H:%M:%SZ')
     end_iso = config.EVENT_END_TIME.strftime('%Y-%m-%dT%H:%M:%SZ')
     event_name_json = json.dumps(event_name)
+    radio_poll = max(1, getattr(config, 'RADIO_POLL_SECONDS', 2))
 
     # Build slides list - base slides always included
     # Note: Radio Status and Recent QSOs are in the sidebar, not carousel
@@ -343,13 +344,18 @@ def write_index_html(image_dir):
         for title, img in slides
     )
 
-    # Sidebar content - always visible
+    # Sidebar content - always visible.
+    # The radio section keeps the static PNG (so rsync'd remote copies still
+    # show data) AND a hidden #radio-live panel. When the JS poller can reach
+    # /api/radio (i.e. served from the Pi), it swaps the PNG out for live
+    # HTML; otherwise the PNG stays visible.
     sidebar_radio = ''
     if config.SHOW_RADIO_SIDEBAR:
         sidebar_radio = '''
-      <div class="sidebar-section">
+      <div class="sidebar-section radio-section">
         <h3>Radio Status</h3>
         <img id="sidebar-radio" src="radio_info.png" alt="Radio Status">
+        <div id="radio-live" hidden></div>
       </div>'''
 
     t = THEME  # Shorthand for template
@@ -444,6 +450,68 @@ def write_index_html(image_dir):
     width: 100%;
     height: auto;
     display: block;
+  }}
+  /* Live radio panel (populated by /api/radio when available). */
+  #radio-live {{ display: flex; flex-direction: column; gap: 0.35rem; }}
+  #radio-live .station-hdr {{
+    color: #ffd24a;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 0.25rem;
+    border-bottom: 1px solid {t['border']};
+    padding-bottom: 0.1rem;
+  }}
+  #radio-live .radio-strip {{
+    border: 2px solid #777;
+    border-radius: 4px;
+    padding: 0.3rem 0.4rem;
+    background: rgba(0,0,0,0.25);
+    font-variant-numeric: tabular-nums;
+  }}
+  #radio-live .radio-strip.tx {{ border-color: {t['accent']}; box-shadow: 0 0 6px rgba(233,69,96,0.4); }}
+  #radio-live .radio-strip.stale {{ border-color: #444; opacity: 0.55; }}
+  #radio-live .row {{
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.4rem;
+  }}
+  #radio-live .label {{ color: {t['text_primary']}; font-size: 0.8rem; }}
+  #radio-live .op {{ color: {t['text_secondary']}; font-size: 0.75rem; }}
+  #radio-live .freq {{
+    color: #5fff9c;
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }}
+  #radio-live .tx-freq {{ color: #ffa45f; font-size: 0.85rem; }}
+  #radio-live .status {{
+    color: #6fd0ff;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+  }}
+  #radio-live .status .flag {{ margin-left: 0.4rem; }}
+  #radio-live .status .flag.tx {{ color: {t['accent']}; font-weight: 600; }}
+  #radio-live .status .flag.active {{ color: #ffd24a; font-weight: 600; }}
+  #radio-live .status .flag.disc {{ color: #ff6666; }}
+  #radio-live .radio-strip.stale .freq,
+  #radio-live .radio-strip.stale .tx-freq,
+  #radio-live .radio-strip.stale .status,
+  #radio-live .radio-strip.stale .label,
+  #radio-live .radio-strip.stale .op {{ color: #666; }}
+  #radio-live .stale-note {{ font-size: 0.7rem; color: #888; }}
+  #radio-live .empty {{
+    color: {t['text_muted']};
+    font-size: 0.75rem;
+    text-align: center;
+    padding: 0.4rem 0;
+  }}
+  #radio-live .disconnected {{
+    color: #ff8a6a;
+    font-size: 0.7rem;
+    text-align: center;
+    padding: 0.2rem 0;
   }}
   .carousel-container {{
     flex: 1;
@@ -684,6 +752,174 @@ def write_index_html(image_dir):
     if (qsosImg) qsosImg.src = qsosImg.src.split('?')[0] + '?t=' + t;
   }}
   setInterval(refreshSidebar, sidebarRefresh);
+
+  // --- Live radio polling ----------------------------------------------
+  // Tries /api/radio. When served from the Pi running webserver.py, it
+  // succeeds and we swap the static radio_info.png for an HTML panel that
+  // refreshes every {radio_poll}s. When the page is served from somewhere
+  // else (e.g. an rsync'd remote site), /api/radio 404s and we leave the
+  // PNG in place — same behavior as before this feature existed.
+  (function setupRadioLive() {{
+    var liveEl = document.getElementById('radio-live');
+    var pngEl = document.getElementById('sidebar-radio');
+    if (!liveEl) return;  // SHOW_RADIO_SIDEBAR is off
+
+    var pollMs = {radio_poll} * 1000;
+    var retryMs = 30000;
+    var liveMode = false;
+
+    function pad2(n) {{ return (n < 10 ? '0' : '') + n; }}
+
+    function fmtFreq(hz) {{
+      if (!hz) return '-.---.--';
+      var khz = hz / 1000.0;
+      var mhz = Math.floor(khz / 1000);
+      var rem = khz - mhz * 1000;
+      var khzPart = Math.floor(rem);
+      var dec = Math.round((rem - khzPart) * 100);
+      if (dec === 100) {{ dec = 0; khzPart += 1; }}
+      return mhz + '.' + (khzPart < 100 ? (khzPart < 10 ? '00' : '0') : '') + khzPart + '.' + pad2(dec);
+    }}
+
+    function renderRadios(data) {{
+      var radios = (data && data.radios) || [];
+      var serverNow = (data && data.server_time) || Math.floor(Date.now() / 1000);
+      liveEl.replaceChildren();
+      if (!radios.length) {{
+        var empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'No radios reporting';
+        liveEl.appendChild(empty);
+        return;
+      }}
+      var currentStation = null;
+      for (var i = 0; i < radios.length; i++) {{
+        var r = radios[i];
+        if (r.station_name !== currentStation) {{
+          currentStation = r.station_name;
+          var hdr = document.createElement('div');
+          hdr.className = 'station-hdr';
+          hdr.textContent = '-- ' + currentStation;
+          liveEl.appendChild(hdr);
+        }}
+        var age = serverNow - (r.last_update || serverNow);
+        var stale = age > 60;
+        var tx = !!r.is_transmitting && !stale;
+
+        var strip = document.createElement('div');
+        strip.className = 'radio-strip' + (tx ? ' tx' : '') + (stale ? ' stale' : '');
+
+        // Row 1: radio label + operator
+        var row1 = document.createElement('div');
+        row1.className = 'row';
+        var lbl = document.createElement('span');
+        lbl.className = 'label';
+        var radioLabel = 'R' + r.radio_nr;
+        if (r.radio_name) radioLabel += '  ' + r.radio_name;
+        lbl.textContent = radioLabel;
+        row1.appendChild(lbl);
+
+        var op = document.createElement('span');
+        op.className = 'op';
+        var opText = r.op_call ? 'Op: ' + r.op_call : '';
+        if (stale) opText += (opText ? '  ' : '') + '(' + age + 's ago)';
+        op.textContent = opText;
+        row1.appendChild(op);
+        strip.appendChild(row1);
+
+        // Row 2: RX freq + TX freq if split
+        var row2 = document.createElement('div');
+        row2.className = 'row';
+        var rx = document.createElement('span');
+        rx.className = 'freq';
+        rx.textContent = stale ? '-.---.--' : fmtFreq(r.freq);
+        row2.appendChild(rx);
+        if (!stale && r.is_split && r.tx_freq && r.tx_freq !== r.freq) {{
+          var txf = document.createElement('span');
+          txf.className = 'tx-freq';
+          txf.textContent = 'TX: ' + fmtFreq(r.tx_freq);
+          row2.appendChild(txf);
+        }}
+        strip.appendChild(row2);
+
+        // Row 3: mode/RUN/SPLIT on the left, ACTIVE/TX/CONN on the right
+        var row3 = document.createElement('div');
+        row3.className = 'row status';
+        var left = document.createElement('span');
+        var leftParts = [];
+        if (r.mode) leftParts.push(r.mode);
+        leftParts.push(r.is_running ? 'RUN' : 'S&P');
+        if (r.is_split) leftParts.push('SPLIT');
+        left.textContent = leftParts.join('   ');
+        row3.appendChild(left);
+
+        var right = document.createElement('span');
+        if (r.is_active) {{
+          var a = document.createElement('span'); a.className = 'flag active'; a.textContent = 'ACTIVE'; right.appendChild(a);
+        }}
+        if (r.is_transmitting) {{
+          var t1 = document.createElement('span'); t1.className = 'flag tx'; t1.textContent = 'TX'; right.appendChild(t1);
+        }}
+        var conn = document.createElement('span');
+        conn.className = 'flag ' + (r.is_connected ? 'conn' : 'disc');
+        conn.textContent = r.is_connected ? 'CONN' : 'DISC';
+        right.appendChild(conn);
+        row3.appendChild(right);
+        strip.appendChild(row3);
+
+        liveEl.appendChild(strip);
+      }}
+    }}
+
+    function markDisconnected() {{
+      var note = liveEl.querySelector('.disconnected');
+      if (!note) {{
+        note = document.createElement('div');
+        note.className = 'disconnected';
+        note.textContent = 'live updates paused';
+        liveEl.insertBefore(note, liveEl.firstChild);
+      }}
+    }}
+
+    function clearDisconnected() {{
+      var note = liveEl.querySelector('.disconnected');
+      if (note) note.remove();
+    }}
+
+    function enterLiveMode() {{
+      if (liveMode) return;
+      liveMode = true;
+      if (pngEl) pngEl.style.display = 'none';
+      liveEl.hidden = false;
+    }}
+
+    function poll() {{
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var timeoutId = ctrl ? setTimeout(function() {{ ctrl.abort(); }}, 4000) : null;
+      var opts = ctrl ? {{ signal: ctrl.signal, cache: 'no-store' }} : {{ cache: 'no-store' }};
+      fetch('api/radio', opts).then(function(resp) {{
+        if (timeoutId) clearTimeout(timeoutId);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.json();
+      }}).then(function(data) {{
+        enterLiveMode();
+        clearDisconnected();
+        renderRadios(data);
+        setTimeout(poll, pollMs);
+      }}).catch(function() {{
+        if (timeoutId) clearTimeout(timeoutId);
+        if (liveMode) {{
+          markDisconnected();
+          setTimeout(poll, pollMs);
+        }} else {{
+          // Never connected — likely a remote rsync'd copy. Back off.
+          setTimeout(poll, retryMs);
+        }}
+      }});
+    }}
+
+    poll();
+  }})();
 
   document.getElementById('prev').addEventListener('click', function() {{ go(cur - 1); }});
   document.getElementById('next').addEventListener('click', function() {{ go(cur + 1); }});
