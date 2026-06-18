@@ -415,11 +415,19 @@ def get_qso_classes(cursor):
 
 
 def get_qso_categories(cursor):
-    cursor.execute("SELECT COUNT(*), SUBSTR(exchange, LENGTH(exchange), 1) as category FROM qso_log GROUP BY category;")
-    categories = []
-    for row in cursor:
-        categories.append((row[0], row[1]))
-    return categories
+    cursor.execute("SELECT exchange FROM qso_log;")
+    counts = {}
+    for (exchange,) in cursor:
+        cls = ''
+        if exchange:
+            token = exchange.split()[0]  # e.g. "1D" from "1D EPA"
+            if token and token[-1].isalpha():
+                cls = token[-1].upper()
+        # Validate against known Field Day classes; bucket anything else into
+        # a visible '?' slice rather than inventing a phantom category.
+        key = cls if cls in constants.CATEGORY_NAMES else '?'
+        counts[key] = counts.get(key, 0) + 1
+    return [(count, key) for key, count in counts.items()]
 
 
 def get_qsos_per_hour_per_band(cursor):
