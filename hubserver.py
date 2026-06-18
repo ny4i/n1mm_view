@@ -21,6 +21,8 @@ Run standalone for testing on an unprivileged port:
     ./hubserver.py 8088
 """
 import logging
+import os
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -75,6 +77,75 @@ def _run(cmd):
                               timeout=3).stdout.strip()
     except Exception:
         return ''
+
+
+# External IP requires an outbound call, so cache it (the page polls every 5s).
+_ext_ip_cache = {'ip': None, 'ts': 0}
+
+
+def _read_file(path):
+    try:
+        with open(path) as fh:
+            return fh.read()
+    except OSError:
+        return ''
+
+
+def _system_info():
+    """Host vitals for the landing page, mirroring the shell MOTD: load,
+    memory, temperature, uptime, process count, disk usage, NTP reference,
+    and (cached) external IP."""
+    out = {}
+    la = _read_file('/proc/loadavg').split()
+    if len(la) >= 3:
+        out['load'] = ' '.join(la[:3])
+    up = _read_file('/proc/uptime').split()
+    if up:
+        secs = int(float(up[0]))
+        d, rem = divmod(secs, 86400)
+        h, rem = divmod(rem, 3600)
+        out['uptime'] = (('%dd ' % d) if d else '') + '%dh %dm' % (h, rem // 60)
+    mem = {}
+    for line in _read_file('/proc/meminfo').splitlines():
+        k, _, v = line.partition(':')
+        mem[k] = v.strip()
+
+    def _kb(key):
+        try:
+            return int(mem.get(key, '0').split()[0])
+        except (ValueError, IndexError):
+            return 0
+    total = _kb('MemTotal')
+    avail = _kb('MemAvailable') or _kb('MemFree')
+    if total:
+        out['mem_total_mb'] = total // 1024
+        out['mem_free_mb'] = avail // 1024
+        out['mem_pct'] = round((total - avail) / total * 100, 1)
+    temp = _run(['vcgencmd', 'measure_temp'])  # 'temp=47.7\'C'
+    if '=' in temp:
+        out['temp'] = temp.split('=', 1)[1].replace("'C", '°C').strip()
+    try:
+        out['procs'] = sum(1 for p in os.listdir('/proc') if p.isdigit())
+    except OSError:
+        pass
+    for label, path in (('root', '/'), ('log', '/var/log')):
+        try:
+            du = shutil.disk_usage(path)
+            out[label + '_pct'] = round(du.used / du.total * 100)
+        except OSError:
+            pass
+    for line in _run(['chronyc', 'tracking']).splitlines():
+        if line.startswith('Reference ID'):
+            out['ntp_ref'] = line.split(':', 1)[1].strip()
+            break
+    now = int(time.time())
+    if not _ext_ip_cache['ip'] or now - _ext_ip_cache['ts'] > 300:
+        ip = _run(['curl', '-s', '--max-time', '2', 'https://icanhazip.com'])
+        if ip:
+            _ext_ip_cache['ip'] = ip.strip()
+            _ext_ip_cache['ts'] = now
+    out['external_ip'] = _ext_ip_cache['ip']
+    return out
 
 
 def _checknet_info():
@@ -218,6 +289,7 @@ def _collect_status():
         'total': len(SERVICES),
         'db': _db_stats(),
         'net': _net_info(),
+        'sys': _system_info(),
     }
 
 
@@ -267,10 +339,11 @@ PAGE = """<!doctype html>
   .badge.fieldday { background: #1f6feb; color: #fff; }
   .badge.normal { background: #2d333b; color: #adbac7; }
   .badge.unknown { background: #6e4a00; color: #f0c674; }
-  .net .rows { display: grid; gap: 0.4rem 1.5rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-  .net .row { display: flex; justify-content: space-between; gap: 1rem;
+  .net .rows { display: grid; gap: 0.4rem 1.5rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .net .row { display: flex; justify-content: space-between; gap: 1rem; min-width: 0;
               padding: 0.35rem 0; border-bottom: 1px solid #21262d; font-size: 0.92rem; }
-  .net .row .k { color: #8b949e; } .net .row .v { font-variant-numeric: tabular-nums; text-align: right; }
+  .net .row .k { color: #8b949e; white-space: nowrap; }
+  .net .row .v { font-variant-numeric: tabular-nums; text-align: right; min-width: 0; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -285,6 +358,7 @@ PAGE = """<!doctype html>
     <div class="stat"><div class="k">Last QSO</div><div class="v" id="lastqso" style="font-size:1rem">{{ db.last_qso }}</div></div>
   </div>
   <div class="net" id="net"></div>
+  <div class="net" id="sys"></div>
   <div class="grid" id="grid"></div>
 </div>
 <footer>n1mm_view station hub v{{ version }} &middot; auto-refreshing every 5s</footer>
@@ -321,8 +395,26 @@ PAGE = """<!doctype html>
         (mode === 'fieldday' ? 'FIELD DAY MODE' : mode === 'normal' ? 'NORMAL MODE' : 'MODE UNKNOWN') +
       '</span></h2><div class="rows">' + rowHtml + '</div>';
   }
+  function renderSys(s) {
+    var rows = [];
+    if (s.uptime) rows.push(['Uptime', s.uptime]);
+    if (s.load) rows.push(['Load average', s.load]);
+    if (s.mem_total_mb != null) rows.push(['Memory',
+      s.mem_free_mb + ' MB free / ' + s.mem_total_mb + ' MB (' + s.mem_pct + '% used)']);
+    if (s.temp) rows.push(['Temperature', s.temp]);
+    if (s.procs != null) rows.push(['Processes', s.procs]);
+    if (s.root_pct != null) rows.push(['Root disk', s.root_pct + '% used']);
+    if (s.log_pct != null) rows.push(['Log disk', s.log_pct + '% used']);
+    if (s.ntp_ref) rows.push(['NTP reference', s.ntp_ref]);
+    if (s.external_ip) rows.push(['External IP', s.external_ip]);
+    var rowHtml = rows.map(function (r) {
+      return '<div class="row"><span class="k">' + r[0] + '</span><span class="v">' + r[1] + '</span></div>';
+    }).join('');
+    document.getElementById('sys').innerHTML = '<h2>System</h2><div class="rows">' + rowHtml + '</div>';
+  }
   function render(data) {
     renderNet(data.net || {});
+    renderSys(data.sys || {});
     document.getElementById('upcount').textContent = data.up + '/' + data.total;
     document.getElementById('qsos').textContent = data.db.qso_count;
     document.getElementById('lastqso').textContent = data.db.last_qso;
