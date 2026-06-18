@@ -8,6 +8,14 @@ config.ini
 *.db.*
 *.db
 
+# Group-private prior contest logs (not useful upstream). The consolidated
+# prior_operators.db is already covered by *.db above.
+priorLogs/
+*.adi
+*.ADI
+*.adif
+*.ADIF
+
 # Local post-contest analysis scripts (not part of the dashboard)
 /generate_charts.py
 /generate_comparison_charts.py

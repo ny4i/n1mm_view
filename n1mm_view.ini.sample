@@ -92,3 +92,54 @@ SHOW_OPERATOR_LEADERBOARD = False
 # from past test sessions). Set to 0 to disable hiding. The 60-second
 # "dim" threshold in the renderer is separate and still applies.
 RADIO_HIDE_SECONDS = 600
+# Race-curve slide: cumulative distinct operators this year, last year (as a
+# reference line), and the "new" subset (this year's ops whose name does not
+# appear in PRIOR_DB_FILENAME's operator table). Requires [NEW_OPERATORS] below.
+SHOW_NEW_OPS_RACE = False
+# Roster slide + sidebar panel listing this year's new operators with their
+# first-QSO timestamp, band, mode, and callsign worked.
+SHOW_NEW_OPS_ROSTER = False
+# Year-over-year bar chart of "new operators per event" in the sidebar AND as
+# a carousel slide. Reads PRIOR_OPERATORS_DB (built by import_prior_operators.py)
+# and appends the current event as a "live" bar.
+SHOW_NEW_OPS_YOY = False
+
+[NEW_OPERATORS]
+; Path to a prior event's n1mm_view DB. Operators in the current event whose
+; name does NOT appear in this DB's operator table are flagged as "new".
+; Leave empty to disable comparison (everyone counts as new). For ARRL Field
+; Day the natural choice is last year's FD DB.
+PRIOR_DB_FILENAME = n1mm_view.2025ARRLFD.db
+; Label used for the reference series on the race-curve slide.
+PRIOR_EVENT_LABEL = 2025 FD
+; Consolidated prior-operators database produced by import_prior_operators.py.
+; This is the runtime source for the "not new" lookup AND the YOY bar chart.
+; Build / refresh it with:
+;     python3 import_prior_operators.py
+; The script reads PRIOR_DB_FILENAME, every n1mm_view.*.db in the CWD, and
+; every *.adi/*.adif in PRIOR_ADIF_DIR.
+PRIOR_OPERATORS_DB = prior_operators.db
+; Directory of historical ADIF logs (e.g. logs from 2019-2024) — read ONLY by
+; the import script, not on each render. Drop new ADIFs in here and re-run
+; the importer when you want them picked up.
+PRIOR_ADIF_DIR = priorLogs
+; Case-insensitive regex used by the YOY chart to pick which events to plot.
+; The default matches ARRL Field Day variants (ARRL-FD, ARRLFD, ARRL FD); use
+; e.g. '.' to plot every event in the prior-ops DB.
+YOY_EVENT_REGEX = ARRL.?FD
+
+[EXTERNAL_SLIDES]
+; Each non-empty line becomes an iframe slide in the carousel. The key is the
+; slide title; the value is the URL. Add or remove entries to extend the
+; carousel without touching code. The Pi web server is served over plain HTTP,
+; so HTTP -> HTTPS iframes work fine, but HTTPS -> HTTP iframes will be blocked
+; by the browser. Comment a line out with ';' to disable it.
+;
+; Caveats with iframe embedding:
+;  - Some sites send X-Frame-Options: DENY (e.g. QRZ.com) and refuse to embed
+;    at all; those slides will show an "open in new tab" link instead.
+;  - ClubLog Livestream uses a WebSocket whose handshake includes the iframe's
+;    Origin (this Pi's URL). ClubLog may or may not accept it — if the page
+;    sits on "Connecting…" forever, the fallback link is your way in.
+;ClubLog Livestream = https://clublog.org/livestream/W4TA
+;Solar Conditions = https://www.hamqsl.com/solar.html

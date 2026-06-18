@@ -288,6 +288,77 @@ def create_images(size, image_dir, last_qso_timestamp):
         except Exception as e:
             logging.exception(e)
 
+    # New-operator displays: race-curve, roster, and YOY bar. Prior-ops data
+    # comes from PRIOR_OPERATORS_DB (built by import_prior_operators.py) with
+    # a fallback to PRIOR_DB_FILENAME for first-year setups.
+    if data_updated and (config.SHOW_NEW_OPS_RACE or config.SHOW_NEW_OPS_ROSTER
+                          or config.SHOW_NEW_OPS_YOY):
+        try:
+            db = sqlite3.connect(config.DATABASE_FILENAME)
+            try:
+                cur_first = dataaccess.get_operator_first_qsos(db.cursor())
+            finally:
+                db.close()
+            # Consolidated prior-ops list (built by import_prior_operators.py).
+            # Fall back to PRIOR_DB_FILENAME alone if the consolidated DB has
+            # not been generated yet.
+            prior_names = dataaccess.get_prior_operators_from_consolidated_db(
+                getattr(config, 'PRIOR_OPERATORS_DB', ''))
+            if not prior_names:
+                prior_names, _, _ = dataaccess.get_prior_operator_names(config.PRIOR_DB_FILENAME)
+            prior_curve = dataaccess.get_prior_first_qso_curve(config.PRIOR_DB_FILENAME) \
+                if config.SHOW_NEW_OPS_RACE else []
+
+            if config.SHOW_NEW_OPS_RACE:
+                try:
+                    image_data, image_size = graphics.draw_new_ops_race(
+                        size, cur_first, prior_names, prior_curve,
+                        prior_event_label=config.PRIOR_EVENT_LABEL)
+                    if image_data is not None:
+                        filename = makePNGTitle(image_dir, 'new_ops_race')
+                        graphics.save_image(image_data, image_size, filename)
+                except Exception as e:
+                    logging.exception(e)
+
+            if config.SHOW_NEW_OPS_ROSTER:
+                try:
+                    image_data, image_size = graphics.draw_new_ops_roster(
+                        size, cur_first, prior_names, event_label=config.EVENT_NAME)
+                    if image_data is not None:
+                        filename = makePNGTitle(image_dir, 'new_ops_roster')
+                        graphics.save_image(image_data, image_size, filename)
+                except Exception as e:
+                    logging.exception(e)
+
+            if config.SHOW_NEW_OPS_YOY:
+                try:
+                    yoy_rows = dataaccess.get_yoy_new_op_counts(
+                        getattr(config, 'PRIOR_OPERATORS_DB', ''),
+                        event_label_regex=getattr(config, 'YOY_EVENT_REGEX', None))
+                    cur_year = config.EVENT_START_TIME.year
+                    cur_new = sum(1 for r in cur_first
+                                  if r['name'].strip().lower() not in prior_names)
+                    cur_total = len(cur_first)
+                    # Sidebar-sized PNG (width ~ sidebar_width px, modest height).
+                    sidebar_size = (600, 360)
+                    image_data, image_size = graphics.draw_new_ops_yoy(
+                        sidebar_size, yoy_rows, current_year=cur_year,
+                        current_new_count=cur_new, current_total_count=cur_total)
+                    if image_data is not None:
+                        filename = makePNGTitle(image_dir, 'new_ops_yoy')
+                        graphics.save_image(image_data, image_size, filename)
+                    # Also render a slide-sized variant for the carousel.
+                    image_data, image_size = graphics.draw_new_ops_yoy(
+                        size, yoy_rows, current_year=cur_year,
+                        current_new_count=cur_new, current_total_count=cur_total)
+                    if image_data is not None:
+                        filename = makePNGTitle(image_dir, 'new_ops_yoy_slide')
+                        graphics.save_image(image_data, image_size, filename)
+                except Exception as e:
+                    logging.exception(e)
+        except Exception as e:
+            logging.exception(e)
+
     #if data_updated:   # Data is always updated since the sections map is always updated. Let rsync command handle this.
     if config.POST_FILE_COMMAND is not None:
        logging.debug('Executing command %s' % (config.POST_FILE_COMMAND))
@@ -313,36 +384,70 @@ def write_index_html(image_dir):
     event_name_json = json.dumps(event_name)
     radio_poll = max(1, getattr(config, 'RADIO_POLL_SECONDS', 2))
 
-    # Build slides list - base slides always included
-    # Note: Radio Status and Recent QSOs are in the sidebar, not carousel
+    # Build slides list - base slides always included.
+    # Each entry is (title, src, kind) where kind is 'img' (PNG written by
+    # create_images) or 'iframe' (external URL). Note: Radio Status and Recent
+    # QSOs are in the sidebar, not the carousel.
     slides = [
-        (f'{mult_title} Map', 'sections_worked_map.png'),
-        ('QSO Summary', 'qso_summary_table.png'),
-        ('QSO Rates', 'qso_rates_table.png'),
-        ('QSO Rate Over Time', 'qso_rates_graph.png'),
-        ('QSOs by Operator', 'qso_operators_graph.png'),
-        ('Operator Totals', 'qso_operators_table.png'),
-        ('All Operator Stats', 'qso_operators_table_all.png'),
-        ('QSOs by Station', 'qso_stations_graph.png'),
-        ('QSOs by Band', 'qso_bands_graph.png'),
-        ('QSOs by Mode', 'qso_modes_graph.png'),
-        ('QSOs by Class', 'qso_classes_graph.png'),
-        ('QSOs by Category', 'qso_categories_graph.png'),
+        (f'{mult_title} Map', 'sections_worked_map.png', 'img'),
+        ('QSO Summary', 'qso_summary_table.png', 'img'),
+        ('QSO Rates', 'qso_rates_table.png', 'img'),
+        ('QSO Rate Over Time', 'qso_rates_graph.png', 'img'),
+        ('QSOs by Operator', 'qso_operators_graph.png', 'img'),
+        ('Operator Totals', 'qso_operators_table.png', 'img'),
+        ('All Operator Stats', 'qso_operators_table_all.png', 'img'),
+        ('QSOs by Station', 'qso_stations_graph.png', 'img'),
+        ('QSOs by Band', 'qso_bands_graph.png', 'img'),
+        ('QSOs by Mode', 'qso_modes_graph.png', 'img'),
+        ('QSOs by Class', 'qso_classes_graph.png', 'img'),
+        ('QSOs by Category', 'qso_categories_graph.png', 'img'),
     ]
 
     # Add optional slides based on config (radio_info is in sidebar)
     if config.SHOW_MULT_PROGRESS:
-        slides.append(('Multiplier Progress', 'mults_progress.png'))
+        slides.append(('Multiplier Progress', 'mults_progress.png', 'img'))
     if config.SHOW_MULT_REMAINING:
-        slides.append(('Multipliers Remaining', 'mults_remaining.png'))
+        slides.append(('Multipliers Remaining', 'mults_remaining.png', 'img'))
     if config.SHOW_OPERATOR_LEADERBOARD:
-        slides.append(('Operator Leaderboard', 'operator_leaderboard.png'))
+        slides.append(('Operator Leaderboard', 'operator_leaderboard.png', 'img'))
+    if config.SHOW_NEW_OPS_RACE:
+        slides.append(('New Operators Race', 'new_ops_race.png', 'img'))
+    if config.SHOW_NEW_OPS_ROSTER:
+        slides.append(('New Operators', 'new_ops_roster.png', 'img'))
+    if config.SHOW_NEW_OPS_YOY:
+        slides.append(('New Operators Year-Over-Year', 'new_ops_yoy_slide.png', 'img'))
 
-    # Build slides HTML
-    slides_html = '\n'.join(
-        f'  <div class="slide"><h2>{title}</h2>\n    <img src="{img}" alt="{title}"></div>'
-        for title, img in slides
-    )
+    # External URL slides from [EXTERNAL_SLIDES]. Rendered as iframes with a
+    # fallback link in case the remote site sends X-Frame-Options: DENY.
+    for title, url in getattr(config, 'EXTERNAL_SLIDES', []):
+        slides.append((title, url, 'iframe'))
+
+    def _slide_html(title, src, kind):
+        title_esc = title.replace('<', '&lt;').replace('>', '&gt;')
+        if kind == 'iframe':
+            src_attr = src.replace('"', '&quot;')
+            # Mirror the bare iframe used by VK5GR-IOTA for ClubLog livestream
+            # (id/name/frameborder/allowtransparency, no sandbox, no
+            # referrerpolicy, no `allow`). Some sites' WebSocket/session
+            # handshakes break under stricter iframe settings.
+            iframe_name = 'iframe_' + ''.join(c if c.isalnum() else '_' for c in title)
+            return (
+                f'  <div class="slide" data-kind="iframe">'
+                f'<h2>{title_esc}</h2>\n'
+                f'    <div class="iframe-wrap">'
+                f'<iframe id="{iframe_name}" name="{iframe_name}" src="{src_attr}"'
+                f' frameborder="0" allowtransparency="true" loading="lazy"></iframe>'
+                f'<div class="iframe-fallback">If this page does not load, '
+                f'<a href="{src_attr}" target="_blank" rel="noopener">open it in a new tab</a>.'
+                f'</div></div></div>'
+            )
+        return (
+            f'  <div class="slide" data-kind="img">'
+            f'<h2>{title_esc}</h2>\n'
+            f'    <img src="{src}" alt="{title_esc}"></div>'
+        )
+
+    slides_html = '\n'.join(_slide_html(t, s, k) for t, s, k in slides)
 
     # Sidebar content - always visible.
     # The radio section keeps the static PNG (so rsync'd remote copies still
@@ -356,6 +461,28 @@ def write_index_html(image_dir):
         <h3>Radio Status</h3>
         <img id="sidebar-radio" src="radio_info.png" alt="Radio Status">
         <div id="radio-live" hidden></div>
+      </div>'''
+
+    # New-operators sidebar: PNG fallback for rsync'd copies + a hidden
+    # #new-ops-live panel that the JS poller populates from /api/new_ops.
+    sidebar_new_ops = ''
+    if config.SHOW_NEW_OPS_ROSTER:
+        sidebar_new_ops = '''
+      <div class="sidebar-section new-ops-section">
+        <h3>New Operators</h3>
+        <img id="sidebar-new-ops" src="new_ops_roster.png" alt="New Operators">
+        <div id="new-ops-live" hidden></div>
+      </div>'''
+
+    # Year-over-year new-ops bar chart (no live overlay — chart is rendered
+    # to PNG by headless.py each render cycle so the current year's bar
+    # reflects the live count).
+    sidebar_yoy = ''
+    if config.SHOW_NEW_OPS_YOY:
+        sidebar_yoy = '''
+      <div class="sidebar-section yoy-section">
+        <h3>New Ops Year-Over-Year</h3>
+        <img id="sidebar-yoy" src="new_ops_yoy.png" alt="New Operators Year-Over-Year">
       </div>'''
 
     t = THEME  # Shorthand for template
@@ -393,6 +520,45 @@ def write_index_html(image_dir):
     flex: 1 1 auto;
     text-align: center;
   }}
+  .last-qso {{
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+    color: {t['text_secondary']};
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 40%;
+  }}
+  .last-qso .label {{
+    color: {t['text_muted']};
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }}
+  .last-qso .last-qso-line {{
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }}
+  .last-qso .last-qso-line .call {{
+    color: #5fff9c;
+    font-weight: 600;
+  }}
+  .last-qso .last-qso-line .op {{ color: #ffd24a; }}
+  .last-qso .last-qso-line .age {{
+    font-weight: 600;
+    padding: 0.05rem 0.4rem;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.05);
+  }}
+  .last-qso .last-qso-line .age.fresh {{ color: #5fff9c; background: rgba(95,255,156,0.12); }}
+  .last-qso .last-qso-line .age.warm  {{ color: #ffd24a; background: rgba(255,210,74,0.12); }}
+  .last-qso .last-qso-line .age.stale {{ color: #ff6666; background: rgba(255,102,102,0.15); }}
+  .last-qso .last-qso-line.stale {{ color: {t['text_muted']}; }}
   .clock {{
     display: flex;
     gap: 1rem;
@@ -417,7 +583,8 @@ def write_index_html(image_dir):
   .clock .countdown.over {{ color: {t['text_muted']}; }}
   @media (max-width: 700px) {{
     header {{ justify-content: center; }}
-    header h1 {{ flex: 1 0 100%; }}
+    header h1 {{ flex: 1 0 100%; order: -1; }}
+    .last-qso {{ max-width: 100%; }}
     .clock {{ font-size: 0.75rem; gap: 0.6rem; }}
   }}
   .main-content {{
@@ -513,6 +680,39 @@ def write_index_html(image_dir):
     text-align: center;
     padding: 0.2rem 0;
   }}
+  /* Live new-operators panel. */
+  #new-ops-live {{ display: flex; flex-direction: column; gap: 0.25rem; }}
+  #new-ops-live .new-ops-summary {{
+    color: #ffd24a;
+    font-size: 0.8rem;
+    text-align: center;
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid {t['border']};
+  }}
+  #new-ops-live .new-op-row {{
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-variant-numeric: tabular-nums;
+    padding: 0.15rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }}
+  #new-ops-live .new-op-row .call {{
+    color: #5fff9c;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }}
+  #new-ops-live .new-op-row .meta {{
+    color: {t['text_secondary']};
+    font-size: 0.7rem;
+  }}
+  #new-ops-live .empty {{
+    color: {t['text_muted']};
+    font-size: 0.75rem;
+    text-align: center;
+    padding: 0.4rem 0;
+  }}
   .carousel-container {{
     flex: 1;
     display: flex;
@@ -553,6 +753,29 @@ def write_index_html(image_dir):
     max-height: calc(100vh - 7rem);
     object-fit: contain;
   }}
+  .slide[data-kind="iframe"] {{ width: 100%; height: 100%; }}
+  .iframe-wrap {{
+    width: 95%;
+    height: calc(100vh - 7rem);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }}
+  .iframe-wrap iframe {{
+    flex: 1 1 auto;
+    width: 100%;
+    border: 1px solid {t['border']};
+    background: #ffffff;
+    border-radius: 4px;
+  }}
+  .iframe-fallback {{
+    font-size: 0.75rem;
+    color: {t['text_muted']};
+    text-align: center;
+    flex-shrink: 0;
+  }}
+  .iframe-fallback a {{ color: #6fd0ff; text-decoration: none; }}
+  .iframe-fallback a:hover {{ text-decoration: underline; }}
   .nav-btn {{
     position: absolute;
     top: 50%;
@@ -619,6 +842,10 @@ def write_index_html(image_dir):
 <body>
 
 <header>
+  <div class="last-qso" id="last-qso-hdr">
+    <span class="label">Last QSO</span>
+    <span class="last-qso-line" id="last-qso-text">&mdash;</span>
+  </div>
   <h1>{event_name}</h1>
   <div class="clock">
     <span><span class="label">UTC</span><span id="clk-utc">--:--:--</span></span>
@@ -630,6 +857,8 @@ def write_index_html(image_dir):
 <div class="main-content">
   <div class="sidebar">
 {sidebar_radio}
+{sidebar_new_ops}
+{sidebar_yoy}
     <div class="sidebar-section">
       <h3>Recent QSOs</h3>
       <img id="sidebar-qsos" src="last_qso_table.png" alt="Recent QSOs">
@@ -915,6 +1144,178 @@ def write_index_html(image_dir):
           // Never connected — likely a remote rsync'd copy. Back off.
           setTimeout(poll, retryMs);
         }}
+      }});
+    }}
+
+    poll();
+  }})();
+
+  // --- Live last-QSO header --------------------------------------------
+  // Poll /api/last_qso on the same cadence as the radio panel so the header
+  // surfaces "what did we just work" within ~RADIO_POLL_SECONDS of the QSO
+  // landing in the DB. Falls back silently if the endpoint isn't reachable.
+  (function setupLastQsoHeader() {{
+    var el = document.getElementById('last-qso-text');
+    if (!el) return;
+    var pollMs = {radio_poll} * 1000;
+    var retryMs = 30000;
+    var liveMode = false;
+
+    function pad2(n) {{ return (n < 10 ? '0' : '') + n; }}
+    function fmtTimeZ(ts) {{
+      var d = new Date(ts * 1000);
+      return pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + 'Z';
+    }}
+    function fmtAge(secs) {{
+      if (secs < 60) return secs + 's ago';
+      if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+      return Math.floor(secs / 3600) + 'h ago';
+    }}
+
+    function render(data) {{
+      if (!data || !data.last_qso) {{
+        el.textContent = 'no QSOs yet';
+        el.className = 'last-qso-line stale';
+        return;
+      }}
+      var q = data.last_qso;
+      var serverNow = (data && data.server_time) || Math.floor(Date.now() / 1000);
+      var age = Math.max(0, serverNow - (q.timestamp || serverNow));
+      // Freshness classes: fresh < 30s, warm < 300s (5 min), stale beyond.
+      var ageClass = 'fresh';
+      if (age >= 300) ageClass = 'stale';
+      else if (age >= 30) ageClass = 'warm';
+      el.className = 'last-qso-line';
+
+      el.replaceChildren();
+      // Age first — this is the heartbeat indicator.
+      var ageEl = document.createElement('span');
+      ageEl.className = 'age ' + ageClass;
+      ageEl.textContent = fmtAge(age);
+      el.appendChild(ageEl);
+      el.appendChild(document.createTextNode('  '));
+
+      var call = document.createElement('span');
+      call.className = 'call';
+      call.textContent = q.callsign;
+      el.appendChild(call);
+      if (q.band || q.mode) {{
+        el.appendChild(document.createTextNode(' '));
+        var meta = document.createElement('span');
+        meta.className = 'meta';
+        var parts = [];
+        if (q.band) parts.push(q.band);
+        if (q.mode) parts.push(q.mode);
+        meta.textContent = parts.join('/');
+        el.appendChild(meta);
+      }}
+      if (q.operator) {{
+        el.appendChild(document.createTextNode(' by '));
+        var op = document.createElement('span');
+        op.className = 'op';
+        op.textContent = q.operator;
+        el.appendChild(op);
+      }}
+    }}
+
+    function poll() {{
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var timeoutId = ctrl ? setTimeout(function() {{ ctrl.abort(); }}, 4000) : null;
+      var opts = ctrl ? {{ signal: ctrl.signal, cache: 'no-store' }} : {{ cache: 'no-store' }};
+      fetch('api/last_qso', opts).then(function(resp) {{
+        if (timeoutId) clearTimeout(timeoutId);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.json();
+      }}).then(function(data) {{
+        liveMode = true;
+        render(data);
+        setTimeout(poll, pollMs);
+      }}).catch(function() {{
+        if (timeoutId) clearTimeout(timeoutId);
+        setTimeout(poll, liveMode ? pollMs : retryMs);
+      }});
+    }}
+
+    poll();
+  }})();
+
+  // --- Live new-ops polling --------------------------------------------
+  // /api/new_ops returns the same data the new_ops_roster PNG is built from.
+  // When reachable we swap the PNG for an HTML list that updates every 30s.
+  // On rsync'd remote copies the endpoint 404s and we leave the PNG alone.
+  (function setupNewOpsLive() {{
+    var liveEl = document.getElementById('new-ops-live');
+    var pngEl = document.getElementById('sidebar-new-ops');
+    if (!liveEl) return;  // SHOW_NEW_OPS_ROSTER is off
+
+    var pollMs = 30000;
+    var retryMs = 60000;
+    var liveMode = false;
+
+    function pad2(n) {{ return (n < 10 ? '0' : '') + n; }}
+    function fmtTime(ts) {{
+      var d = new Date(ts * 1000);
+      return pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + 'Z';
+    }}
+
+    function render(data) {{
+      var newOps = (data && data.new_ops) || [];
+      liveEl.replaceChildren();
+
+      var hdr = document.createElement('div');
+      hdr.className = 'new-ops-summary';
+      var thisYear = (data && data.total_new) || 0;
+      var lastYear = (data && data.prior_total);
+      var lastLabel = (data && data.prior_event_label) || 'last event';
+      hdr.textContent = thisYear + ' new this event' +
+        (lastYear != null ? '  (' + lastYear + ' in ' + lastLabel + ')' : '');
+      liveEl.appendChild(hdr);
+
+      if (!newOps.length) {{
+        var empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'No new operators yet';
+        liveEl.appendChild(empty);
+        return;
+      }}
+      for (var i = 0; i < newOps.length; i++) {{
+        var r = newOps[i];
+        var row = document.createElement('div');
+        row.className = 'new-op-row';
+        var call = document.createElement('span');
+        call.className = 'call';
+        call.textContent = r.name;
+        row.appendChild(call);
+        var meta = document.createElement('span');
+        meta.className = 'meta';
+        meta.textContent = fmtTime(r.first_ts) + '  ' + (r.band || '') + '  ' + (r.mode || '');
+        row.appendChild(meta);
+        liveEl.appendChild(row);
+      }}
+    }}
+
+    function enterLiveMode() {{
+      if (liveMode) return;
+      liveMode = true;
+      if (pngEl) pngEl.style.display = 'none';
+      liveEl.hidden = false;
+    }}
+
+    function poll() {{
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var timeoutId = ctrl ? setTimeout(function() {{ ctrl.abort(); }}, 4000) : null;
+      var opts = ctrl ? {{ signal: ctrl.signal, cache: 'no-store' }} : {{ cache: 'no-store' }};
+      fetch('api/new_ops', opts).then(function(resp) {{
+        if (timeoutId) clearTimeout(timeoutId);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.json();
+      }}).then(function(data) {{
+        enterLiveMode();
+        render(data);
+        setTimeout(poll, pollMs);
+      }}).catch(function() {{
+        if (timeoutId) clearTimeout(timeoutId);
+        setTimeout(poll, liveMode ? pollMs : retryMs);
       }});
     }}
 

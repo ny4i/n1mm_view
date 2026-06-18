@@ -62,6 +62,9 @@ CONFIG_KEYS = [
     'SHOW_RADIO_INFO', 'SHOW_RADIO_SIDEBAR',
     'SHOW_MULT_PROGRESS', 'SHOW_MULT_REMAINING', 'SHOW_MULT_ALERT',
     'SHOW_OPERATOR_LEADERBOARD',
+    'SHOW_NEW_OPS_RACE', 'SHOW_NEW_OPS_ROSTER', 'SHOW_NEW_OPS_YOY',
+    'PRIOR_DB_FILENAME', 'PRIOR_EVENT_LABEL',
+    'PRIOR_OPERATORS_DB', 'PRIOR_ADIF_DIR', 'YOY_EVENT_REGEX',
     'POST_FILE_COMMAND',
 ]
 
@@ -85,6 +88,102 @@ def api_radio():
     return jsonify({
         'server_time': now,
         'radios': radios,
+    })
+
+
+@app.route('/api/new_ops')
+def api_new_ops():
+    """
+    Return this event's operators flagged as "new" (name not in
+    PRIOR_DB_FILENAME's operator table), plus a summary count and the
+    prior event's total operator count. Each new-op entry includes the
+    timestamp/band/mode/callsign of their first event QSO.
+    """
+    import constants
+    db = sqlite3.connect(config.DATABASE_FILENAME)
+    try:
+        cursor = db.cursor()
+        cur_first = dataaccess.get_operator_first_qsos(cursor)
+    finally:
+        db.close()
+    prior_names = dataaccess.get_prior_operators_from_consolidated_db(
+        getattr(config, 'PRIOR_OPERATORS_DB', ''))
+    # "Last event" count for the sidebar is PRIOR_DB_FILENAME only (the chosen
+    # reference event), NOT the union across every imported prior year.
+    last_event_names, _, _ = dataaccess.get_prior_operator_names(config.PRIOR_DB_FILENAME)
+    if not prior_names:
+        prior_names = last_event_names
+    new_ops = []
+    for r in cur_first:
+        if r['name'].strip().lower() in prior_names:
+            continue
+        bid = r.get('band_id') or 0
+        mid = r.get('mode_id') or 0
+        band = (constants.Bands.BANDS_TITLE[bid]
+                if 0 <= bid < constants.Bands.count() else '')
+        mode = (constants.Modes.SIMPLE_MODES_LIST[constants.Modes.MODE_TO_SIMPLE_MODE[mid]]
+                if 0 <= mid < len(constants.Modes.MODE_TO_SIMPLE_MODE) else '')
+        new_ops.append({
+            'name': r['name'],
+            'first_ts': r['first_ts'],
+            'band': band,
+            'mode': mode,
+            'worked': r.get('worked') or '',
+        })
+    return jsonify({
+        'server_time': int(time.time()),
+        'event_name': config.EVENT_NAME,
+        'prior_event_label': getattr(config, 'PRIOR_EVENT_LABEL', ''),
+        # prior_total = last reference event only (e.g. 2025 FD = 25);
+        # all_prior_total = union across every imported prior event
+        # (e.g. 75 across 2019-2025).
+        'prior_total': len(last_event_names) if last_event_names else None,
+        'all_prior_total': len(prior_names) if prior_names else None,
+        'total_ops': len(cur_first),
+        'total_new': len(new_ops),
+        'new_ops': new_ops,
+    })
+
+
+@app.route('/api/last_qso')
+def api_last_qso():
+    """Return the most recent QSO (callsign, band, mode, operator, etc.) so
+    the dashboard header can show it without waiting for headless to re-render."""
+    import constants
+    db = sqlite3.connect(config.DATABASE_FILENAME)
+    try:
+        cursor = db.cursor()
+        ts, message = dataaccess.get_last_qso(cursor)
+        cursor.execute(
+            'SELECT timestamp, callsign, exchange, section, operator.name, '
+            '       band_id, mode_id, station.name '
+            'FROM qso_log JOIN operator ON operator.id = operator_id '
+            'JOIN station ON station.id = station_id '
+            'ORDER BY timestamp DESC LIMIT 1;')
+        row = cursor.fetchone()
+    finally:
+        db.close()
+    if not row:
+        return jsonify({'server_time': int(time.time()), 'last_qso': None})
+    band = (constants.Bands.BANDS_TITLE[row[5]]
+            if 0 <= row[5] < constants.Bands.count() else '')
+    mode = (constants.Modes.SIMPLE_MODES_LIST[constants.Modes.MODE_TO_SIMPLE_MODE[row[6]]]
+            if 0 <= row[6] < len(constants.Modes.MODE_TO_SIMPLE_MODE) else '')
+    return jsonify({
+        'server_time': int(time.time()),
+        'last_qso': {
+            'timestamp': row[0],
+            'callsign': row[1],
+            'exchange': row[2],
+            'section': row[3],
+            'operator': row[4],
+            'band_id': row[5],
+            'band': band,
+            'mode_id': row[6],
+            'mode': mode,
+            'station': row[7],
+            'message': message,
+        },
     })
 
 

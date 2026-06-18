@@ -175,5 +175,42 @@ class Config(metaclass = Singleton):
         self.SHOW_MULT_REMAINING = cfg.getboolean('FEATURES', 'SHOW_MULT_REMAINING', fallback=False)
         self.SHOW_MULT_ALERT = cfg.getboolean('FEATURES', 'SHOW_MULT_ALERT', fallback=False)
         self.SHOW_OPERATOR_LEADERBOARD = cfg.getboolean('FEATURES', 'SHOW_OPERATOR_LEADERBOARD', fallback=False)
-        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, OPERATOR_LEADERBOARD=%s',
-                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_OPERATOR_LEADERBOARD)
+
+        # New-operator tracking: compare current event ops against a prior
+        # event's operator table. An operator who logs a QSO this event and
+        # whose name is NOT in PRIOR_DB_FILENAME's operator table counts as
+        # "new". PRIOR_DB_FILENAME='' disables the feature regardless of the
+        # SHOW_NEW_OPS_* flags.
+        self.PRIOR_DB_FILENAME = cfg.get('NEW_OPERATORS', 'PRIOR_DB_FILENAME', fallback='')
+        self.PRIOR_EVENT_LABEL = cfg.get('NEW_OPERATORS', 'PRIOR_EVENT_LABEL', fallback='Last Year')
+        # Consolidated prior-operators DB built by import_prior_operators.py.
+        # This is the runtime source for the "not new" lookup AND the YOY chart.
+        self.PRIOR_OPERATORS_DB = cfg.get('NEW_OPERATORS', 'PRIOR_OPERATORS_DB',
+                                          fallback='prior_operators.db')
+        # ADIF directory — used only by import_prior_operators.py to build
+        # PRIOR_OPERATORS_DB; not read on every render.
+        self.PRIOR_ADIF_DIR = cfg.get('NEW_OPERATORS', 'PRIOR_ADIF_DIR', fallback='')
+        # Regex (case-insensitive) used by the YOY chart to filter which
+        # events are plotted. Default matches ARRL Field Day variants like
+        # "2019 ARRL-FD", "2025ARRLFD".
+        self.YOY_EVENT_REGEX = cfg.get('NEW_OPERATORS', 'YOY_EVENT_REGEX',
+                                       fallback=r'ARRL.?FD')
+        self.SHOW_NEW_OPS_RACE = cfg.getboolean('FEATURES', 'SHOW_NEW_OPS_RACE', fallback=False)
+        self.SHOW_NEW_OPS_ROSTER = cfg.getboolean('FEATURES', 'SHOW_NEW_OPS_ROSTER', fallback=False)
+        self.SHOW_NEW_OPS_YOY = cfg.getboolean('FEATURES', 'SHOW_NEW_OPS_YOY', fallback=False)
+
+        # External slides: any [EXTERNAL_SLIDES] entry becomes an iframe slide
+        # in the carousel. Key = title shown in the slide header, value = URL.
+        # Some sites send X-Frame-Options: DENY and will refuse to embed; a
+        # fallback "open in new tab" link is rendered below every iframe.
+        self.EXTERNAL_SLIDES = []
+        if cfg.has_section('EXTERNAL_SLIDES'):
+            for key, value in cfg.items('EXTERNAL_SLIDES'):
+                url = (value or '').strip()
+                if url:
+                    self.EXTERNAL_SLIDES.append((key.strip(), url))
+        if self.EXTERNAL_SLIDES:
+            logging.info('External slides: %s', [t for t, _ in self.EXTERNAL_SLIDES])
+
+        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, OPERATOR_LEADERBOARD=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
+                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)

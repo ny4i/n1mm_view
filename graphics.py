@@ -1084,6 +1084,238 @@ def draw_operator_leaderboard(size, qso_operators):
     return draw_table(size, cells, title)
 
 
+def draw_new_ops_race(size, current_first_qsos, prior_op_names, prior_curve,
+                      prior_event_label='Last Year'):
+    """
+    Race-curve chart of cumulative distinct operators over event-elapsed time.
+
+    Series:
+      - Prior event (reference): from prior_curve, (elapsed_secs, count) pairs.
+      - Current event TOTAL: cumulative distinct operators in current_first_qsos.
+      - Current event NEW:   subset whose name is not in prior_op_names.
+
+    `current_first_qsos` is the list returned by
+    dataaccess.get_operator_first_qsos (sorted ascending by first_ts).
+    Returns (raw_data, size) or (None, (0,0)).
+    """
+    if not current_first_qsos and not prior_curve:
+        return None, (0, 0)
+
+    # Anchor the current-event timeline to EVENT_START_TIME (UTC). Negative
+    # offsets are clipped to 0 (anyone who logged before official start).
+    event_start = calendar.timegm(config.EVENT_START_TIME.timetuple())
+
+    cur_total_pts = []  # (hours_elapsed, cumulative_count)
+    cur_new_pts = []
+    total = 0
+    new_total = 0
+    prior_set = prior_op_names or set()
+    for r in current_first_qsos:
+        offset_h = max(0.0, (r['first_ts'] - event_start) / 3600.0)
+        total += 1
+        cur_total_pts.append((offset_h, total))
+        if r['name'].strip().lower() not in prior_set:
+            new_total += 1
+        cur_new_pts.append((offset_h, new_total))
+
+    prior_pts = [(secs / 3600.0, n) for secs, n in (prior_curve or [])]
+
+    # Plot
+    width_inches = size[0] / 100.0
+    height_inches = size[1] / 100.0
+    fig = plt.Figure(figsize=(width_inches, height_inches), dpi=100,
+                     tight_layout={'pad': 0.3}, facecolor='black')
+    if matplotlib.__version__[0] == '1':
+        ax = fig.add_subplot(111, axis_bgcolor='black')
+    else:
+        ax = fig.add_subplot(111, facecolor='black')
+    ax.set_title('Operators On The Air — Race vs. %s' % prior_event_label,
+                 color='white', size=42, weight='bold')
+
+    def _step(points):
+        if not points:
+            return [], []
+        xs = [0.0]
+        ys = [0]
+        for x, y in points:
+            xs.append(x); ys.append(ys[-1])  # horizontal to next event time
+            xs.append(x); ys.append(y)       # vertical step up
+        return xs, ys
+
+    drawn = False
+    if prior_pts:
+        xs, ys = _step(prior_pts)
+        ax.plot(xs, ys, color='#888888', linewidth=3, label=prior_event_label,
+                linestyle='--')
+        drawn = True
+    if cur_total_pts:
+        xs, ys = _step(cur_total_pts)
+        ax.plot(xs, ys, color='#5fff9c', linewidth=4, label='This Year — All Ops')
+        drawn = True
+    if cur_new_pts:
+        xs, ys = _step(cur_new_pts)
+        ax.plot(xs, ys, color='#ffd24a', linewidth=4, label='This Year — NEW Ops')
+        drawn = True
+
+    if not drawn:
+        plt.close(fig)
+        return None, (0, 0)
+
+    # X-axis spans event duration if known, otherwise data extent.
+    try:
+        event_end = calendar.timegm(config.EVENT_END_TIME.timetuple())
+        event_hours = max(1.0, (event_end - event_start) / 3600.0)
+    except Exception:
+        event_hours = 24.0
+    data_hours = max(
+        cur_total_pts[-1][0] if cur_total_pts else 0,
+        cur_new_pts[-1][0] if cur_new_pts else 0,
+        prior_pts[-1][0] if prior_pts else 0,
+    )
+    ax.set_xlim(0, max(event_hours, data_hours))
+
+    # Y-axis: 0 to max series, with a bit of headroom.
+    y_max = max(
+        cur_total_pts[-1][1] if cur_total_pts else 0,
+        cur_new_pts[-1][1] if cur_new_pts else 0,
+        prior_pts[-1][1] if prior_pts else 0,
+    )
+    ax.set_ylim(0, max(5, y_max + 2))
+
+    # Annotate the latest current-year value at the right edge of the curve.
+    if cur_total_pts:
+        x, y = cur_total_pts[-1]
+        ax.annotate('%d total' % y, xy=(x, y), xytext=(6, 4),
+                    textcoords='offset points', color='#5fff9c',
+                    size=22, weight='bold')
+    if cur_new_pts:
+        x, y = cur_new_pts[-1]
+        ax.annotate('%d new' % y, xy=(x, y), xytext=(6, -22),
+                    textcoords='offset points', color='#ffd24a',
+                    size=22, weight='bold')
+
+    ax.grid(True, color='#333333')
+    ax.set_xlabel('Hours since event start', color='w', size='x-large', weight='bold')
+    ax.set_ylabel('Cumulative operators', color='w', size='x-large', weight='bold')
+    legend = ax.legend(loc='upper left', facecolor='black', edgecolor='white',
+                       labelcolor='white', fontsize='x-large')
+    for spine in ('left', 'right', 'top', 'bottom'):
+        ax.spines[spine].set_color('w')
+    ax.tick_params(axis='both', colors='w', labelsize=14)
+
+    canvas = agg.FigureCanvasAgg(fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    raw_data = renderer.tostring_argb() if image_format == 'ARGB' else renderer.tostring_rgb()
+    plt.close(fig)
+    return raw_data, canvas.get_width_height()
+
+
+def draw_new_ops_yoy(size, yoy_rows, current_year=None, current_new_count=None,
+                     current_total_count=None):
+    """
+    Vertical bar chart of "new operators" per event, year-over-year.
+    yoy_rows = [(label, year, total_ops, new_ops), ...] (already sorted).
+    Year-1 (the earliest year) is treated as the baseline and shown in gray.
+    If current_year/current_new_count are provided AND current_year is later
+    than every yoy row, an additional bar is appended in the accent color.
+    Sized for the sidebar — height should be ~size[1] for the slide variant
+    and smaller for the sidebar PNG.
+    """
+    bars = []  # list of (label, year, count, is_current, is_baseline)
+    earliest_year = yoy_rows[0][1] if yoy_rows else None
+    for label, year, _total, new_ops in yoy_rows:
+        is_baseline = (year == earliest_year)
+        bars.append((label, year, new_ops, False, is_baseline))
+    if (current_year is not None and current_new_count is not None and
+            (not yoy_rows or current_year > yoy_rows[-1][1])):
+        bars.append(('%s (live)' % current_year, current_year,
+                     current_new_count, True, False))
+
+    if not bars:
+        return None, (0, 0)
+
+    width_inches = size[0] / 100.0
+    height_inches = size[1] / 100.0
+    fig = plt.Figure(figsize=(width_inches, height_inches), dpi=100,
+                     tight_layout={'pad': 0.4}, facecolor='black')
+    if matplotlib.__version__[0] == '1':
+        ax = fig.add_subplot(111, axis_bgcolor='black')
+    else:
+        ax = fig.add_subplot(111, facecolor='black')
+
+    title = 'New Operators Per Year'
+    ax.set_title(title, color='white', size=22 if size[0] < 800 else 32,
+                 weight='bold')
+
+    xs = list(range(len(bars)))
+    heights = [b[2] for b in bars]
+    colors = []
+    for _, _, _, is_current, is_baseline in bars:
+        if is_current:
+            colors.append('#5fff9c')   # green for live current
+        elif is_baseline:
+            colors.append('#888888')   # gray for the earliest "everyone is new" bar
+        else:
+            colors.append('#ffd24a')   # yellow for true new-per-year
+
+    bar_rects = ax.bar(xs, heights, color=colors, edgecolor='white', linewidth=0.5)
+    ax.set_xticks(xs)
+    label_size = 12 if size[0] < 800 else 16
+    ax.set_xticklabels(
+        [('%d*' % b[1]) if b[3] else str(b[1]) for b in bars],
+        color='w', rotation=0, size=label_size)
+    ax.tick_params(axis='y', colors='w', labelsize=label_size)
+    ax.set_ylabel('Operators', color='w', size=label_size, weight='bold')
+    for spine in ('left', 'right', 'top', 'bottom'):
+        ax.spines[spine].set_color('w')
+    ax.grid(True, axis='y', color='#333333')
+    ax.set_axisbelow(True)
+
+    y_max = max(heights) if heights else 1
+    ax.set_ylim(0, y_max + max(2, y_max * 0.15))
+
+    # Annotate each bar with its count.
+    for rect, h in zip(bar_rects, heights):
+        ax.text(rect.get_x() + rect.get_width() / 2.0, h,
+                str(h), ha='center', va='bottom', color='white',
+                size=label_size, weight='bold')
+
+    canvas = agg.FigureCanvasAgg(fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    raw_data = renderer.tostring_argb() if image_format == 'ARGB' else renderer.tostring_rgb()
+    plt.close(fig)
+    return raw_data, canvas.get_width_height()
+
+
+def draw_new_ops_roster(size, current_first_qsos, prior_op_names,
+                        event_label='This Event'):
+    """
+    Table listing this event's new operators (name not in prior_op_names),
+    each with their first-QSO time, band, mode, and callsign worked.
+    """
+    if not current_first_qsos:
+        return None, (0, 0)
+    prior_set = prior_op_names or set()
+    new_rows = [r for r in current_first_qsos
+                if r['name'].strip().lower() not in prior_set]
+    if not new_rows:
+        # Render a "no new ops yet" placeholder so the slide doesn't vanish.
+        cells = [['Callsign', 'First QSO (UTC)', 'Band', 'Mode', 'Worked'],
+                 ['(none yet)', '—', '—', '—', '—']]
+        return draw_table(size, cells, 'New Operators — %s' % event_label)
+
+    cells = [['Callsign', 'First QSO (UTC)', 'Band', 'Mode', 'Worked']]
+    for r in new_rows:
+        ts = datetime.datetime.utcfromtimestamp(r['first_ts']).strftime('%H:%M:%S')
+        band = Bands.BANDS_TITLE[r['band_id']] if 0 <= r['band_id'] < Bands.count() else '?'
+        mode_simple = Modes.SIMPLE_MODES_LIST[Modes.MODE_TO_SIMPLE_MODE[r['mode_id']]] \
+            if 0 <= r['mode_id'] < len(Modes.MODE_TO_SIMPLE_MODE) else '?'
+        cells.append([r['name'], ts, band, mode_simple, r.get('worked') or ''])
+    return draw_table(size, cells, 'New Operators — %s' % event_label)
+
+
 def draw_map(size, qsos_by_section):
     """
     make the choropleth with Cartopy & section shapefiles
