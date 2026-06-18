@@ -121,6 +121,13 @@ class Config(metaclass = Singleton):
         self.N1MM_BROADCAST_PORT = cfg.getint('N1MM INFO','BROADCAST_PORT',fallback=12060)
         logging.info ('Listening on UDP port %d' % (self.N1MM_BROADCAST_PORT))
         self.N1MM_BROADCAST_ADDRESS = cfg.get('N1MM INFO','BROADCAST_ADDRESS')
+        # Optional: re-send each received N1MM datagram verbatim to this UDP
+        # port on localhost. Lets a co-located consumer (e.g. the Club Log
+        # gateway on its own N1MM port) get the packets without the logger
+        # having to broadcast to multiple destinations. 0 = disabled.
+        self.UDP_FORWARD_PORT = cfg.getint('N1MM INFO', 'UDP_FORWARD_PORT', fallback=0)
+        if self.UDP_FORWARD_PORT:
+            logging.info('Forwarding N1MM datagrams to 127.0.0.1:%d' % self.UDP_FORWARD_PORT)
         self.N1MM_LOG_FILE_NAME = cfg.get('N1MM INFO','LOG_FILE_NAME')
 
         # Comma-separated allow-list for the <app> XML field. Messages whose

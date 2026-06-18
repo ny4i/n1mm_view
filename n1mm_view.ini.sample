@@ -41,6 +41,13 @@ QTH_LONGITUDE = -82.74670114956339
 BROADCAST_PORT = 12060
 BROADCAST_ADDRESS = 192.168.1.255
 LOG_FILE_NAME = FD2024-N4N.s3db
+; Optional UDP fan-out. If set, the collector re-sends every received N1MM
+; datagram verbatim to this port on localhost (127.0.0.1). Useful when a
+; second consumer must run on the same host and would otherwise collide on
+; BROADCAST_PORT -- e.g. the Club Log gateway started with -n1mmport=12062.
+; The logger keeps sending to BROADCAST_PORT only; no double-broadcast.
+; 0 or unset disables forwarding.
+;UDP_FORWARD_PORT = 12062
 ; Comma-separated allow-list for the <app> XML field. Messages whose app
 ; field is NOT in this list are dropped by the collector. Matching is
 ; case-insensitive. Messages with no <app> field at all are always

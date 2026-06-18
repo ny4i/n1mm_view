@@ -417,8 +417,17 @@ def main():
         receive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         process_event = None
         proc = None
+        forward_socket = None
         try:
             receive_socket.bind(('', config.N1MM_BROADCAST_PORT))
+
+            # Optional fan-out: if UDP_FORWARD_PORT is set, re-send each received
+            # datagram verbatim to that port on localhost so a co-located
+            # consumer (e.g. the Club Log gateway on its own N1MM port) gets it.
+            forward_dest = (('127.0.0.1', config.UDP_FORWARD_PORT)
+                            if config.UDP_FORWARD_PORT else None)
+            if forward_dest:
+                forward_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
             q = multiprocessing.Queue()
             process_event = multiprocessing.Event()
@@ -432,11 +441,21 @@ def main():
                 try:
                     udp_data = receive_socket.recv(BROADCAST_BUF_SIZE)
                     q.put(udp_data)
+                    # Fan-out a verbatim copy to the forward target, if set.
+                    # Never let a forwarding error interfere with collection.
+                    if forward_dest:
+                        try:
+                            forward_socket.sendto(udp_data, forward_dest)
+                        except OSError as fe:
+                            logging.warning('UDP forward to %s:%d failed: %s',
+                                            forward_dest[0], forward_dest[1], fe)
                 except socket.timeout:
                     pass
         finally:
             if receive_socket is not None:
                 receive_socket.close()
+            if forward_socket is not None:
+                forward_socket.close()
             if process_event is not None:
                 process_event.set()
             if proc is not None:
