@@ -57,6 +57,100 @@ SERVICES = [
 ]
 
 
+# Mode marker written by ~/setNetMode.sh (fieldday|normal + epoch).
+NETMODE_FILE = getattr(config, 'NETMODE_FILE', '/home/pi/.netmode')
+# Log written by ~/checkNet.sh (the priority Wi-Fi selector, Field Day only).
+CHECKNET_LOG = getattr(config, 'CHECKNET_LOG', '/var/log/checkNet.log')
+
+# checkNet log lines worth surfacing as "what it last did".
+_CHECKNET_KEYS = ('Already connected', 'Successfully connected', 'Switching Wi-Fi',
+                  'None of the configured', 'reachable via wlan0',
+                  'Leaving current Wi-Fi')
+
+
+def _run(cmd):
+    """Run a command, return stdout stripped ('' on any failure)."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=3).stdout.strip()
+    except Exception:
+        return ''
+
+
+def _checknet_info():
+    """Last run time + last meaningful result from checkNet.sh's log."""
+    import re
+    out = {'last_run': None, 'last_msg': None}
+    try:
+        with open(CHECKNET_LOG, 'rb') as fh:
+            fh.seek(0, 2)
+            fh.seek(max(0, fh.tell() - 8192))
+            lines = [l for l in fh.read().decode('utf-8', 'ignore').splitlines() if l.strip()]
+    except OSError:
+        return out
+    ts_re = re.compile(r'\[([\d\-]+ [\d:]+)\]\s*(.*)')
+    for line in reversed(lines):
+        m = ts_re.match(line)
+        if m and not out['last_run']:
+            out['last_run'] = m.group(1)
+        msg = m.group(2) if m else line
+        if not out['last_msg'] and any(k in msg for k in _CHECKNET_KEYS):
+            out['last_msg'] = msg
+        if out['last_run'] and out['last_msg']:
+            break
+    return out
+
+
+def _net_info():
+    """Current network state for the hub: mode marker, uplink adapter, the
+    Wi-Fi AP we're on (if any), and per-interface IPv4 addresses."""
+    info = {'mode': None, 'mode_since': None, 'uplink': None,
+            'ssid': None, 'bssid': None, 'signal': None, 'addresses': []}
+    # Mode marker from setNetMode.sh
+    try:
+        with open(NETMODE_FILE) as fh:
+            for line in fh:
+                if line.startswith('mode='):
+                    info['mode'] = line.split('=', 1)[1].strip()
+                elif line.startswith('since='):
+                    try:
+                        info['mode_since'] = int(line.split('=', 1)[1].strip())
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+    # Which adapter currently carries the default route (the live uplink)
+    route = _run(['ip', 'route', 'show', 'default'])
+    parts = route.split()
+    if 'dev' in parts:
+        info['uplink'] = parts[parts.index('dev') + 1]
+    # Per-interface IPv4 addresses (skip loopback)
+    for line in _run(['ip', '-o', '-4', 'addr', 'show']).splitlines():
+        cols = line.split()
+        if len(cols) >= 4 and cols[1] != 'lo':
+            info['addresses'].append({'iface': cols[1], 'ip': cols[3]})
+    # Wi-Fi AP: SSID + signal, plus BSSID (the specific access point)
+    for line in _run(['nmcli', '-t', '-f', 'active,ssid,signal',
+                      'dev', 'wifi']).splitlines():
+        if line.startswith('yes:'):
+            f = line.split(':')
+            info['ssid'] = f[1] or None
+            info['signal'] = f[-1] or None
+            break
+    for line in _run(['nmcli', '-t', '-f', 'active,bssid',
+                      'dev', 'wifi']).splitlines():
+        # nmcli -t escapes the colons inside a BSSID as '\:'; protect them
+        # before splitting on the field separator, then restore.
+        guard = line.replace('\\:', '\0')
+        if guard.startswith('yes:'):
+            info['bssid'] = guard.split(':', 1)[1].replace('\0', ':') or None
+            break
+    # checkNet activity is only relevant in Field Day mode (WiFi uplink).
+    if info['mode'] == 'fieldday':
+        info['checknet'] = _checknet_info()
+    return info
+
+
 def _service_status(unit):
     """Return systemd state string: 'active' | 'inactive' | 'failed' | ..."""
     try:
@@ -123,6 +217,7 @@ def _collect_status():
         'up': up,
         'total': len(SERVICES),
         'db': _db_stats(),
+        'net': _net_info(),
     }
 
 
@@ -165,6 +260,17 @@ PAGE = """<!doctype html>
                  font-size: 0.9rem; }
   .card a.open:hover { background: #388bfd; }
   footer { padding: 1rem 1.5rem; color: #6e7681; font-size: 0.8rem; border-top: 1px solid #30363d; }
+  .net { background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+         padding: 1.1rem 1.2rem; margin-bottom: 1.5rem; }
+  .net h2 { margin: 0 0 0.8rem; font-size: 1.05rem; display: flex; align-items: center; gap: 0.6rem; }
+  .net .badge { font-size: 0.8rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 6px; }
+  .badge.fieldday { background: #1f6feb; color: #fff; }
+  .badge.normal { background: #2d333b; color: #adbac7; }
+  .badge.unknown { background: #6e4a00; color: #f0c674; }
+  .net .rows { display: grid; gap: 0.4rem 1.5rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .net .row { display: flex; justify-content: space-between; gap: 1rem;
+              padding: 0.35rem 0; border-bottom: 1px solid #21262d; font-size: 0.92rem; }
+  .net .row .k { color: #8b949e; } .net .row .v { font-variant-numeric: tabular-nums; text-align: right; }
 </style>
 </head>
 <body>
@@ -178,6 +284,7 @@ PAGE = """<!doctype html>
     <div class="stat"><div class="k">Total QSOs</div><div class="v" id="qsos">{{ db.qso_count }}</div></div>
     <div class="stat"><div class="k">Last QSO</div><div class="v" id="lastqso" style="font-size:1rem">{{ db.last_qso }}</div></div>
   </div>
+  <div class="net" id="net"></div>
   <div class="grid" id="grid"></div>
 </div>
 <footer>n1mm_view station hub v{{ version }} &middot; auto-refreshing every 5s</footer>
@@ -192,7 +299,30 @@ PAGE = """<!doctype html>
                     : (s.listening === false ? ', port ' + s.port + ' DOWN' : '');
     return t;
   }
+  function renderNet(n) {
+    var mode = (n.mode || 'unknown');
+    var rows = [];
+    if (n.uplink) rows.push(['Uplink adapter', n.uplink]);
+    if (n.ssid) {
+      var ap = n.ssid + (n.signal ? ' (' + n.signal + '%)' : '');
+      rows.push(['Connected AP', ap]);
+      if (n.bssid) rows.push(['AP BSSID', n.bssid]);
+    }
+    (n.addresses || []).forEach(function (a) { rows.push([a.iface + ' IP', a.ip]); });
+    if (n.checknet && n.checknet.last_run) {
+      rows.push(['Wi-Fi mgr (checkNet)', n.checknet.last_run]);
+      if (n.checknet.last_msg) rows.push(['checkNet result', n.checknet.last_msg]);
+    }
+    var rowHtml = rows.map(function (r) {
+      return '<div class="row"><span class="k">' + r[0] + '</span><span class="v">' + r[1] + '</span></div>';
+    }).join('');
+    document.getElementById('net').innerHTML =
+      '<h2>Network <span class="badge ' + mode + '">' +
+        (mode === 'fieldday' ? 'FIELD DAY MODE' : mode === 'normal' ? 'NORMAL MODE' : 'MODE UNKNOWN') +
+      '</span></h2><div class="rows">' + rowHtml + '</div>';
+  }
   function render(data) {
+    renderNet(data.net || {});
     document.getElementById('upcount').textContent = data.up + '/' + data.total;
     document.getElementById('qsos').textContent = data.db.qso_count;
     document.getElementById('lastqso').textContent = data.db.last_qso;
