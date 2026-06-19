@@ -80,6 +80,9 @@ Visitors browse to `http://<pi-ip>:8080/`. The same `index.html` is still
 copied out by `POST_FILE_COMMAND` (rsync); on remote copies `/api/radio`
 404s and the page falls back to the rsync'd `radio_info.png` automatically.
 
+See `WEBSERVER.md` for the features the web server serves — the phone-friendly
+mobile view and the resilient kiosk display wrapper.
+
 Upon reboot, the collector and dashboard [and optionally headless + web
 server] should start automatically.  
 Consider this experimental at this time.  It might work. It works for me.
