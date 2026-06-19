@@ -45,7 +45,7 @@ app = Flask(__name__)
 # only). `link` controls whether the card offers an "Open" button.
 SERVICES = [
     {'unit': 'n1mm_view_collector', 'label': 'Collector',
-     'desc': 'Receives N1MM+ UDP broadcasts', 'port': None, 'link': False},
+     'desc': 'Receives N1MM+ style UDP broadcasts', 'port': None, 'link': False},
     {'unit': 'n1mm_view_headless', 'label': 'Headless Renderer',
      'desc': 'Generates the chart images', 'port': None, 'link': False},
     {'unit': 'n1mm_view_webserver', 'label': 'QSO Dashboard',
@@ -63,6 +63,39 @@ SERVICES = [
 NETMODE_FILE = getattr(config, 'NETMODE_FILE', '/home/pi/.netmode')
 # Log written by ~/checkNet.sh (the priority Wi-Fi selector, Field Day only).
 CHECKNET_LOG = getattr(config, 'CHECKNET_LOG', '/var/log/checkNet.log')
+# Operator-editable command hints rendered in the hub's left sidebar.
+HUB_HINTS_FILE = getattr(config, 'HUB_HINTS_FILE', '/home/pi/hub_hints.txt')
+
+
+def _hints():
+    """Parse HUB_HINTS_FILE into [{title, items:[{desc, cmd}]}]. '#' starts a
+    section, ';' is a comment, 'desc :: cmd' is a hint (cmd-only if no '::').
+    Returns None if the file is missing so the page can prompt to create it."""
+    try:
+        lines = _read_file(HUB_HINTS_FILE).splitlines()
+    except OSError:
+        return None
+    if not lines and not os.path.exists(HUB_HINTS_FILE):
+        return None
+    sections = []
+    cur = None
+    for raw in lines:
+        s = raw.strip()
+        if not s or s.startswith(';'):
+            continue
+        if s.startswith('#'):
+            cur = {'title': s.lstrip('#').strip(), 'cmds': []}
+            sections.append(cur)
+            continue
+        if cur is None:
+            cur = {'title': '', 'cmds': []}
+            sections.append(cur)
+        if '::' in s:
+            desc, cmd = s.split('::', 1)
+            cur['cmds'].append({'desc': desc.strip(), 'cmd': cmd.strip()})
+        else:
+            cur['cmds'].append({'desc': '', 'cmd': s})
+    return sections
 
 # checkNet log lines worth surfacing as "what it last did".
 _CHECKNET_KEYS = ('Already connected', 'Successfully connected', 'Switching Wi-Fi',
@@ -137,7 +170,9 @@ def _system_info():
     for line in _run(['chronyc', 'tracking']).splitlines():
         if line.startswith('Reference ID'):
             out['ntp_ref'] = line.split(':', 1)[1].strip()
-            break
+        elif line.startswith('Ref time'):
+            # UTC time the last measurement from the time source was processed.
+            out['ntp_sync'] = line.split(':', 1)[1].strip()
     now = int(time.time())
     if not _ext_ip_cache['ip'] or now - _ext_ip_cache['ts'] > 300:
         ip = _run(['curl', '-s', '--max-time', '2', 'https://icanhazip.com'])
@@ -313,7 +348,26 @@ PAGE = """<!doctype html>
            display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.75rem; }
   header h1 { margin: 0; font-size: 1.5rem; }
   header .clock { margin-left: auto; font-variant-numeric: tabular-nums; color: #8b949e; }
-  .wrap { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+  .layout { display: flex; gap: 1.5rem; align-items: flex-start;
+            padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
+  .main { flex: 1; min-width: 0; }
+  .sidebar { flex: 0 0 290px; background: #161b22; border: 1px solid #30363d;
+             border-radius: 12px; padding: 1.1rem 1.2rem; position: sticky; top: 1rem; }
+  .sidebar h2 { margin: 0 0 0.6rem; font-size: 1.05rem; }
+  .sidebar h3 { margin: 1rem 0 0.4rem; font-size: 0.78rem; text-transform: uppercase;
+                letter-spacing: 0.05em; color: #8b949e; }
+  .sidebar .muted { color: #8b949e; font-size: 0.88rem; }
+  .hint { margin-bottom: 0.7rem; }
+  .hint-desc { font-size: 0.84rem; color: #adbac7; margin-bottom: 0.2rem; }
+  .cmd { display: block; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+         padding: 0.4rem 0.55rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+         font-size: 0.8rem; color: #79c0ff; cursor: pointer; overflow-wrap: anywhere; }
+  .cmd:hover { border-color: #1f6feb; }
+  .cmd.copied { color: #3fb950; border-color: #3fb950; }
+  @media (max-width: 820px) {
+    .layout { flex-direction: column; }
+    .sidebar { flex-basis: auto; width: 100%; position: static; }
+  }
   .stats { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
   .stat { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
           padding: 0.9rem 1.2rem; flex: 1 1 180px; }
@@ -335,10 +389,11 @@ PAGE = """<!doctype html>
   .net { background: #161b22; border: 1px solid #30363d; border-radius: 12px;
          padding: 1.1rem 1.2rem; margin-bottom: 1.5rem; }
   .net h2 { margin: 0 0 0.8rem; font-size: 1.05rem; display: flex; align-items: center; gap: 0.6rem; }
-  .net .badge { font-size: 0.8rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 6px; }
+  .badge { font-size: 0.8rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 6px; white-space: nowrap; }
   .badge.fieldday { background: #1f6feb; color: #fff; }
   .badge.normal { background: #2d333b; color: #adbac7; }
   .badge.unknown { background: #6e4a00; color: #f0c674; }
+  .card h2 .badge { margin-left: auto; font-size: 0.7rem; }
   .net .rows { display: grid; gap: 0.4rem 1.5rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
   .net .row { display: flex; justify-content: space-between; gap: 1rem; min-width: 0;
               padding: 0.35rem 0; border-bottom: 1px solid #21262d; font-size: 0.92rem; }
@@ -351,15 +406,33 @@ PAGE = """<!doctype html>
   <h1>{{ event or 'Field Day' }} &mdash; Station Hub</h1>
   <span class="clock" id="clock"></span>
 </header>
-<div class="wrap">
-  <div class="stats">
-    <div class="stat"><div class="k">Services Up</div><div class="v" id="upcount">{{ up }}/{{ total }}</div></div>
-    <div class="stat"><div class="k">Total QSOs</div><div class="v" id="qsos">{{ db.qso_count }}</div></div>
-    <div class="stat"><div class="k">Last QSO</div><div class="v" id="lastqso" style="font-size:1rem">{{ db.last_qso }}</div></div>
-  </div>
-  <div class="net" id="net"></div>
-  <div class="net" id="sys"></div>
-  <div class="grid" id="grid"></div>
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Quick Commands</h2>
+    {% if hints is none %}
+      <p class="muted">Create <code>{{ hints_file }}</code> to add command hints here.</p>
+    {% else %}
+      {% for sec in hints %}
+        {% if sec.title %}<h3>{{ sec.title }}</h3>{% endif %}
+        {% for item in sec.cmds %}
+          <div class="hint">
+            {% if item.desc %}<div class="hint-desc">{{ item.desc }}</div>{% endif %}
+            <code class="cmd" title="click to copy">{{ item.cmd }}</code>
+          </div>
+        {% endfor %}
+      {% endfor %}
+    {% endif %}
+  </aside>
+  <main class="main">
+    <div class="stats">
+      <div class="stat"><div class="k">Services Up</div><div class="v" id="upcount">{{ up }}/{{ total }}</div></div>
+      <div class="stat"><div class="k">Total QSOs</div><div class="v" id="qsos">{{ db.qso_count }}</div></div>
+      <div class="stat"><div class="k">Last QSO</div><div class="v" id="lastqso" style="font-size:1rem">{{ db.last_qso }}</div></div>
+    </div>
+    <div class="net" id="net"></div>
+    <div class="net" id="sys"></div>
+    <div class="grid" id="grid"></div>
+  </main>
 </div>
 <footer>n1mm_view station hub v{{ version }} &middot; auto-refreshing every 5s</footer>
 <script>
@@ -367,6 +440,7 @@ PAGE = """<!doctype html>
   // from any device on the LAN regardless of how this page was reached.
   var HOST = window.location.hostname;
   function dotClass(s) { return s.ok ? 'ok' : (s.state === 'active' ? 'warn' : 'bad'); }
+  function modeLabel(m) { return m === 'fieldday' ? 'FIELD DAY' : m === 'normal' ? 'NORMAL' : 'UNKNOWN'; }
   function stateText(s) {
     var t = s.state;
     if (s.port) t += s.listening === true ? ', port ' + s.port + ' open'
@@ -420,16 +494,26 @@ PAGE = """<!doctype html>
     document.getElementById('lastqso').textContent = data.db.last_qso;
     var grid = document.getElementById('grid');
     grid.innerHTML = '';
+    var mode = (data.net && data.net.mode) || 'unknown';
     data.services.forEach(function (s) {
       var card = document.createElement('div');
       card.className = 'card';
       var link = (s.link && s.port)
         ? '<a class="open" href="http://' + HOST + ':' + s.port + '/" target="_blank" rel="noopener">Open &rarr;</a>'
         : '';
+      // The Club Log gateway uploads over the internet, whose path depends on
+      // the network mode (Field Day = Wi-Fi, Normal = eth0), so show the mode.
+      var badge = (s.unit === 'gateway')
+        ? '<span class="badge ' + mode + '">' + modeLabel(mode) + '</span>'
+        : '';
+      // Show chrony's last time-source sync under the NTP card.
+      var extra = (s.unit === 'chrony' && data.sys && data.sys.ntp_sync)
+        ? '<div class="state">Last sync: ' + data.sys.ntp_sync + '</div>'
+        : '';
       card.innerHTML =
-        '<h2><span class="dot ' + dotClass(s) + '"></span>' + s.label + '</h2>' +
+        '<h2><span class="dot ' + dotClass(s) + '"></span>' + s.label + badge + '</h2>' +
         '<div class="desc">' + s.desc + '</div>' +
-        '<div class="state">' + stateText(s) + '</div>' + link;
+        '<div class="state">' + stateText(s) + '</div>' + extra + link;
       grid.appendChild(card);
     });
   }
@@ -441,6 +525,25 @@ PAGE = """<!doctype html>
     fetch('/api/status').then(function (r) { return r.json(); })
       .then(render).catch(function () {});
   }
+  // Click-to-copy for sidebar commands. navigator.clipboard needs a secure
+  // context (https/localhost); fall back to execCommand on plain-HTTP LAN.
+  function copyCmd(el) {
+    var t = el.textContent;
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(t);
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+    el.classList.add('copied');
+    setTimeout(function () { el.classList.remove('copied'); }, 1000);
+  }
+  document.querySelectorAll('.cmd').forEach(function (el) {
+    el.addEventListener('click', function () { copyCmd(el); });
+  });
   tick(); setInterval(tick, 1000);
   poll(); setInterval(poll, 5000);
 </script>
@@ -453,7 +556,8 @@ PAGE = """<!doctype html>
 def index():
     data = _collect_status()
     return render_template_string(PAGE, version=VERSION, event=data['db']['event'],
-                                  up=data['up'], total=data['total'], db=data['db'])
+                                  up=data['up'], total=data['total'], db=data['db'],
+                                  hints=_hints(), hints_file=HUB_HINTS_FILE)
 
 
 def main():

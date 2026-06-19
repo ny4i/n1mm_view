@@ -1,0 +1,35 @@
+; Sample command hints for the station hub's left sidebar.
+;
+; Copy this to the path in HUB_HINTS_FILE (default: /home/pi/hub_hints.txt),
+; then edit it for your station. The hub re-reads the file on every page load,
+; so just refresh (F5) to see changes -- no restart needed.
+;
+; Format:
+;   # Section heading
+;   Description :: command to run
+;   (a line with no '::' is shown as a command with no description)
+;   ; lines starting with a semicolon are comments
+;
+; Tip: click any command on the hub to copy it to your clipboard.
+
+# Logs
+Follow collector log :: sudo journalctl -u n1mm_view_collector -f
+Follow ClubLog gateway :: tail -f /var/log/gateway.log
+Follow Wi-Fi checkNet :: tail -f /var/log/checkNet.log
+Follow all services :: sudo journalctl -f
+
+# Services
+Status of n1mm services :: systemctl status 'n1mm_view_*'
+Restart web dashboard :: sudo systemctl restart n1mm_view_webserver
+Restart headless render :: sudo systemctl restart n1mm_view_headless
+Restart the hub :: sudo systemctl restart n1mm_view_hub
+
+# Network
+Show network mode :: ~/setNetMode.sh status
+Switch to Field Day :: ~/setNetMode.sh fieldday
+Switch to Normal :: ~/setNetMode.sh normal
+Re-check best Wi-Fi :: sudo ~/checkNet.sh
+
+# Database
+Current QSO count :: sqlite3 ~/n1mm_view/n1mm_view.db "SELECT COUNT(*) FROM qso_log;"
+Last 5 QSOs :: sqlite3 ~/n1mm_view/n1mm_view.db "SELECT datetime(timestamp,'unixepoch'),callsign,exchange FROM qso_log ORDER BY timestamp DESC LIMIT 5;"
