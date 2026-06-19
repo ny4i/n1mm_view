@@ -22,8 +22,10 @@ Remote copies that don't have this server still get the radio_info.png
 sidebar; the index.html falls back to the PNG when /api/radio is unreachable.
 """
 
+import json
 import logging
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -191,6 +193,39 @@ def api_last_qso():
             'station': row[7],
             'message': message,
         },
+    })
+
+
+@app.route('/api/summary')
+def api_summary():
+    """Band x mode QSO counts (CW / Phone / Data / Total) plus grand totals --
+    the 'QSOs Summary' grid, as JSON for the mobile view."""
+    import constants
+    db = sqlite3.connect(config.DATABASE_FILENAME)
+    try:
+        cursor = db.cursor()
+        grid = dataaccess.get_qso_band_modes(cursor)  # [band_id][0=n/a,1=cw,2=phone,3=data]
+    finally:
+        db.close()
+    bands = []
+    tot = [0, 0, 0]  # cw, phone, data
+    for bid, row in enumerate(grid):
+        if bid == 0:  # 'No Band' / N/A -- skip
+            continue
+        cw, phone, data = row[1], row[2], row[3]
+        if (cw + phone + data) == 0:
+            continue  # omit bands with no QSOs to keep the phone list short
+        bands.append({
+            'band': constants.Bands.BANDS_TITLE[bid],
+            'cw': cw, 'phone': phone, 'data': data,
+            'total': cw + phone + data,
+        })
+        tot[0] += cw; tot[1] += phone; tot[2] += data
+    return jsonify({
+        'server_time': int(time.time()),
+        'bands': bands,
+        'totals': {'cw': tot[0], 'phone': tot[1], 'data': tot[2],
+                   'total': tot[0] + tot[1] + tot[2]},
     })
 
 
@@ -547,8 +582,314 @@ def admin_regenerate_index():
 # catch-all /<path:filename> doesn't swallow /admin/...).
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Mobile view -- a lightweight, responsive page that pulls the live JSON API
+# instead of the fixed-width matplotlib slideshow. Phones land here automatically
+# from '/'; '/m' always serves it; append '?big=1' to '/' to force the slideshow.
+# ---------------------------------------------------------------------------
+
+MOBILE_HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>n1mm_view</title>
+<style>
+  :root {
+    --bg: #0a1626; --card: #13233b; --line: #243a5a;
+    --text: #d7e0ec; --muted: #8493ab; --pink: #e94560;
+    --yellow: #ffd24a; --green: #43e08a; --cyan: #6fd0ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%; padding: env(safe-area-inset-top) 0 0 0;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0.75rem 0.75rem 2rem; }
+  header { text-align: center; padding: 0.5rem 0 0.75rem; }
+  header h1 { color: var(--pink); font-size: 1.15rem; margin: 0 0 0.4rem; line-height: 1.25; }
+  .status { font-size: 1rem; font-weight: 600; margin: 0.2rem 0; }
+  .status.pre { color: var(--yellow); }
+  .status.live { color: var(--green); }
+  .status.post { color: var(--muted); }
+  .clocks { color: var(--muted); font-size: 0.85rem; margin-top: 0.3rem;
+            font-variant-numeric: tabular-nums; }
+  .clocks span { margin: 0 0.5rem; }
+  section { background: var(--card); border: 1px solid var(--line);
+            border-radius: 10px; padding: 0.75rem 0.85rem; margin-top: 0.75rem; }
+  section h2 { color: var(--yellow); font-size: 0.72rem; letter-spacing: 0.08em;
+               text-transform: uppercase; margin: 0 0 0.55rem; font-weight: 700; }
+  .call { font-size: 1.5rem; font-weight: 700; color: var(--text); }
+  .lq-sub { color: var(--muted); font-size: 0.9rem; margin-top: 0.15rem; }
+  .lq-sub b { color: var(--cyan); font-weight: 600; }
+  .radio { padding: 0.5rem 0; border-top: 1px solid var(--line); }
+  .radio:first-of-type { border-top: 0; padding-top: 0; }
+  .radio .top { display: flex; justify-content: space-between; align-items: baseline; }
+  .radio .name { color: var(--muted); font-size: 0.85rem; }
+  .radio .op { color: var(--cyan); font-size: 0.85rem; }
+  .radio .freq { font-size: 1.6rem; font-weight: 700; color: var(--green);
+                 font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .badges { margin-top: 0.3rem; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .pill { font-size: 0.7rem; padding: 0.1rem 0.45rem; border-radius: 999px;
+          border: 1px solid var(--line); color: var(--muted); }
+  .pill.on { color: var(--green); border-color: var(--green); }
+  .pill.tx { color: var(--pink); border-color: var(--pink); }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 0.4rem 0.3rem; text-align: right; font-size: 0.95rem; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase;
+             border-bottom: 1px solid var(--line); font-weight: 600; }
+  tbody td { border-bottom: 1px solid rgba(36,58,90,0.5); }
+  tfoot td { font-weight: 700; border-top: 2px solid var(--line); color: var(--yellow); }
+  td.tot, th.tot { color: var(--text); font-weight: 700; }
+  .muted { color: var(--muted); }
+  .newops-list { margin-top: 0.5rem; }
+  .newops-list div { font-size: 0.9rem; padding: 0.2rem 0;
+                     display: flex; justify-content: space-between; }
+  .newops-list .who { color: var(--green); font-weight: 600; }
+  .big-link { display: block; text-align: center; color: var(--cyan);
+              text-decoration: none; font-size: 0.85rem; margin-top: 1rem; }
+  footer { text-align: center; color: var(--muted); font-size: 0.72rem;
+           margin-top: 1rem; }
+  footer .dot { color: var(--green); }
+  footer .dot.stale { color: var(--pink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="event">&nbsp;</h1>
+    <div id="status" class="status">&nbsp;</div>
+    <div class="clocks"><span id="utc"></span><span id="local"></span></div>
+  </header>
+
+  <section>
+    <h2>Last QSO</h2>
+    <div id="lastqso"><span class="muted">Loading…</span></div>
+  </section>
+
+  <section>
+    <h2>Radios</h2>
+    <div id="radios"><span class="muted">Loading…</span></div>
+  </section>
+
+  <section>
+    <h2>QSOs by Band &amp; Mode</h2>
+    <div id="summary"><span class="muted">Loading…</span></div>
+  </section>
+
+  <section>
+    <h2>New Operators</h2>
+    <div id="newops"><span class="muted">Loading…</span></div>
+  </section>
+
+  <a class="big-link" href="/?big=1">Switch to full dashboard view ›</a>
+  <footer><span id="dot" class="dot">●</span> updated <span id="updated">—</span>
+          · v<span id="ver">—</span></footer>
+</div>
+
+<script>
+const EVENT = __EVENT_JSON__;
+let skew = 0;            // serverTime - clientTime, in seconds
+let lastQso = null;      // remembered for per-second "ago" updates
+let lastOk = 0;          // client time of last successful load
+
+function nowSec() { return Date.now() / 1000 + skew; }
+function pad(n) { return String(n).padStart(2, '0'); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function fmtFreq(hz) {
+  if (!hz) return '-.---.--';
+  const khz = hz / 1000.0;
+  let mhz = Math.floor(khz / 1000);
+  let rem = khz - mhz * 1000;
+  let k = Math.floor(rem);
+  let dec = Math.round((rem - k) * 100);
+  if (dec === 100) { dec = 0; k += 1; }
+  return mhz + '.' + String(k).padStart(3, '0') + '.' + pad(dec);
+}
+
+function ago(ts) {
+  let s = Math.max(0, nowSec() - ts);
+  if (s < 60) return Math.floor(s) + 's ago';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+
+function dur(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const d = Math.floor(sec / 86400); sec -= d * 86400;
+  const h = Math.floor(sec / 3600); sec -= h * 3600;
+  const m = Math.floor(sec / 60); const s = sec - m * 60;
+  const hms = pad(h) + ':' + pad(m) + ':' + pad(s);
+  return (d > 0 ? d + 'd ' : '') + hms;
+}
+
+function tick() {
+  const d = new Date(nowSec() * 1000);
+  document.getElementById('utc').textContent =
+    'UTC ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds());
+  document.getElementById('local').textContent =
+    'LOCAL ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+
+  const st = document.getElementById('status');
+  const now = nowSec();
+  if (EVENT.start && now < EVENT.start) {
+    st.textContent = 'Starts in ' + dur(EVENT.start - now); st.className = 'status pre';
+  } else if (EVENT.end && now <= EVENT.end) {
+    st.textContent = 'Running — ends in ' + dur(EVENT.end - now); st.className = 'status live';
+  } else if (EVENT.end && now > EVENT.end) {
+    st.textContent = 'Contest ended'; st.className = 'status post';
+  } else { st.textContent = ' '; st.className = 'status'; }
+
+  if (lastQso) {
+    const a = document.getElementById('lq-ago');
+    if (a) a.textContent = ago(lastQso.timestamp);
+  }
+}
+
+function renderLastQso(d) {
+  lastQso = d && d.last_qso ? d.last_qso : null;
+  const el = document.getElementById('lastqso');
+  if (!lastQso) { el.innerHTML = '<span class="muted">No QSOs yet.</span>'; return; }
+  const q = lastQso;
+  el.innerHTML =
+    '<div class="call">' + esc(q.callsign) + '</div>' +
+    '<div class="lq-sub">' + esc(q.band) + ' / ' + esc(q.mode) +
+    ' by <b>' + esc(q.operator) + '</b> · <span id="lq-ago">' + ago(q.timestamp) + '</span>' +
+    (q.section ? ' · ' + esc(q.section) : '') + '</div>';
+}
+
+function renderRadios(d) {
+  const el = document.getElementById('radios');
+  const rs = (d && d.radios) || [];
+  if (!rs.length) { el.innerHTML = '<span class="muted">No active radio.</span>'; return; }
+  el.innerHTML = rs.map(r => {
+    const badges = [];
+    badges.push('<span class="pill' + (r.is_active ? ' on' : '') + '">' +
+                (r.is_active ? 'ACTIVE' : 'idle') + '</span>');
+    if (r.is_running !== undefined && r.is_running !== null)
+      badges.push('<span class="pill">' + (r.is_running ? 'RUN' : 'S&amp;P') + '</span>');
+    badges.push('<span class="pill' + (r.is_connected ? ' on' : '') + '">' +
+                (r.is_connected ? 'CONN' : 'no conn') + '</span>');
+    if (r.is_transmitting) badges.push('<span class="pill tx">TX</span>');
+    const name = r.radio_name || r.station_name || ('Radio ' + (r.radio_nr || ''));
+    return '<div class="radio"><div class="top">' +
+      '<span class="name">' + esc(name) + '</span>' +
+      '<span class="op">' + esc(r.op_call || '') + '</span></div>' +
+      '<div class="freq">' + fmtFreq(r.freq) + '</div>' +
+      '<div class="badges">' + badges.join('') + '</div></div>';
+  }).join('');
+}
+
+function renderSummary(d) {
+  const el = document.getElementById('summary');
+  const bands = (d && d.bands) || [];
+  if (!bands.length) { el.innerHTML = '<span class="muted">No QSOs yet.</span>'; return; }
+  const t = d.totals;
+  el.innerHTML =
+    '<table><thead><tr><th>Band</th><th>CW</th><th>Ph</th><th>Data</th>' +
+    '<th class="tot">Tot</th></tr></thead><tbody>' +
+    bands.map(b => '<tr><td>' + esc(b.band) + '</td><td>' + b.cw + '</td><td>' +
+      b.phone + '</td><td>' + b.data + '</td><td class="tot">' + b.total +
+      '</td></tr>').join('') +
+    '</tbody><tfoot><tr><td>Total</td><td>' + t.cw + '</td><td>' + t.phone +
+    '</td><td>' + t.data + '</td><td>' + t.total + '</td></tr></tfoot></table>';
+}
+
+function renderNewOps(d) {
+  const el = document.getElementById('newops');
+  if (!d) { el.innerHTML = '<span class="muted">—</span>'; return; }
+  const prior = (d.prior_total != null)
+    ? (' (' + d.prior_total + (d.prior_event_label ? ' in ' + esc(d.prior_event_label) : ' prior') + ')')
+    : '';
+  let html = '<div><b style="color:var(--yellow)">' + (d.total_new || 0) +
+    '</b> new this event' + prior + '</div>';
+  const ops = (d.new_ops || []).slice(0, 12);
+  if (ops.length) {
+    html += '<div class="newops-list">' + ops.map(o =>
+      '<div><span class="who">' + esc(o.name) + '</span>' +
+      '<span class="muted">' + esc([o.band, o.mode].filter(Boolean).join(' ')) +
+      (o.worked ? ' · ' + esc(o.worked) : '') + '</span></div>').join('') + '</div>';
+  }
+  el.innerHTML = html;
+}
+
+async function getJSON(url) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(url + ' ' + r.status);
+  return r.json();
+}
+
+async function load() {
+  try {
+    const [lq, radio, summary, newops] = await Promise.all([
+      getJSON('/api/last_qso'), getJSON('/api/radio'),
+      getJSON('/api/summary'), getJSON('/api/new_ops'),
+    ]);
+    if (lq && lq.server_time) skew = lq.server_time - Date.now() / 1000;
+    renderLastQso(lq); renderRadios(radio);
+    renderSummary(summary); renderNewOps(newops);
+    lastOk = Date.now() / 1000;
+    const dt = new Date(nowSec() * 1000);
+    document.getElementById('updated').textContent =
+      pad(dt.getHours()) + ':' + pad(dt.getMinutes()) + ':' + pad(dt.getSeconds());
+    document.getElementById('dot').className = 'dot';
+  } catch (e) {
+    document.getElementById('dot').className = 'dot stale';
+  }
+}
+
+document.getElementById('event').textContent = EVENT.name || 'n1mm_view';
+document.getElementById('ver').textContent = EVENT.version || '';
+tick();
+load();
+setInterval(tick, 1000);
+setInterval(load, 10000);
+// Refresh promptly when the phone wakes / tab refocuses.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+</script>
+</body>
+</html>
+"""
+
+_MOBILE_UA = re.compile(r'Mobi|Android|iPhone|iPod|iPad|Windows Phone|BlackBerry', re.I)
+
+
+def _event_meta():
+    def epoch(dt):
+        if not dt:
+            return None
+        try:
+            return int(dt.replace(tzinfo=timezone.utc).timestamp())
+        except Exception:
+            return None
+    return {
+        'name': config.EVENT_NAME,
+        'start': epoch(getattr(config, 'EVENT_START_TIME', None)),
+        'end': epoch(getattr(config, 'EVENT_END_TIME', None)),
+        'version': VERSION,
+    }
+
+
+def _render_mobile():
+    return MOBILE_HTML.replace('__EVENT_JSON__', json.dumps(_event_meta()))
+
+
+@app.route('/m')
+def mobile_page():
+    return _render_mobile()
+
+
 @app.route('/')
 def index():
+    ua = request.headers.get('User-Agent', '')
+    if _MOBILE_UA.search(ua) and not request.args.get('big'):
+        return _render_mobile()
     return _serve('index.html')
 
 
