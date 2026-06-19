@@ -38,6 +38,13 @@ logging.basicConfig(level=logging.INFO)
 config = Config()
 logger = logging.getLogger(__name__)
 
+# Werkzeug logs every HTTP request at INFO -- per-request access-log spam during
+# normal operation. Treat it as DEBUG-level detail: show it only when running at
+# DEBUG, otherwise keep just 4xx/5xx (warnings/errors).
+logging.getLogger('werkzeug').setLevel(
+    logging.INFO if logging.getLogger().getEffectiveLevel() <= logging.DEBUG
+    else logging.WARNING)
+
 app = Flask(__name__)
 
 # The four station processes we care about, in display order. `port` is the
