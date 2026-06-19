@@ -1,0 +1,95 @@
+<!-- kiosk_loader.html -- copy to the kiosk and open it in the browser
+     (e.g. chromium --kiosk --app=file:///path/to/kiosk_loader.html).
+     Edit PI below if the pi is not reachable as http://pi400.local:8080.
+     Generated from webserver.py KIOSK_HTML; keep them in sync. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>pi400 kiosk</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  #dash { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #000; }
+  #overlay { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1.1rem;
+    background: #0a1626; color: #d7e0ec; transition: opacity .5s ease; }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  .spinner { width: 64px; height: 64px; border: 6px solid #243a5a;
+    border-top-color: #e94560; border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h1 { color: #e94560; font-size: 2rem; margin: 0; }
+  p { margin: 0; color: #8493ab; font-size: 1.1rem; }
+  #clk { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+  <iframe id="dash" referrerpolicy="no-referrer"></iframe>
+  <div id="overlay">
+    <div class="spinner"></div>
+    <h1>Waiting for pi400…</h1>
+    <p id="msg">Trying to reach the dashboard</p>
+    <p id="clk"></p>
+  </div>
+<script>
+  // Base URL of the pi running webserver.py. '' = same origin (this page served
+  // by the pi at /kiosk). When loading this file locally on the kiosk, set it to
+  // the pi, e.g. 'http://pi400.local'.
+  var PI = 'http://pi400.local:8080';
+  var DASH = PI + '/?big=1';
+  var PING = PI + '/kiosk-ping.gif';
+  var POLL_MS = 4000;     // how often to probe the pi
+  var TIMEOUT_MS = 3500;  // a probe is considered failed after this
+
+  var iframe = document.getElementById('dash');
+  var overlay = document.getElementById('overlay');
+  var msg = document.getElementById('msg');
+  var up = null;          // null = unknown, true / false
+
+  function loadDash() { iframe.src = DASH + '&t=' + Date.now(); }
+
+  // Reveal the dashboard only once the (re)loaded iframe has actually painted,
+  // so recovery doesn't flash an empty/half-loaded frame. If the pi drops again
+  // before it loads, 'up' is already false and the overlay simply stays up.
+  iframe.addEventListener('load', function() { if (up) overlay.classList.add('hidden'); });
+
+  function ping() {
+    return new Promise(function(resolve) {
+      var img = new Image();
+      var done = false;
+      var to = setTimeout(function() {
+        if (!done) { done = true; img.src = ''; resolve(false); }
+      }, TIMEOUT_MS);
+      img.onload = function() { if (!done) { done = true; clearTimeout(to); resolve(true); } };
+      img.onerror = function() { if (!done) { done = true; clearTimeout(to); resolve(false); } };
+      img.src = PING + '?t=' + Date.now();
+    });
+  }
+
+  function tick() {
+    ping().then(function(ok) {
+      if (ok) {
+        // Reload the dashboard only on the down->up (or first) transition; while
+        // the pi stays up the dashboard refreshes its own images/data.
+        if (up !== true) { loadDash(); }  // overlay hides on the iframe 'load' event
+        up = true;
+      } else {
+        if (up !== false) {
+          overlay.classList.remove('hidden');
+          msg.textContent = 'pi400 is unreachable — retrying every ' + (POLL_MS / 1000) + 's';
+        }
+        up = false;
+      }
+    });
+  }
+
+  setInterval(function() {
+    document.getElementById('clk').textContent = new Date().toLocaleTimeString();
+  }, 1000);
+  tick();
+  setInterval(tick, POLL_MS);
+</script>
+</body>
+</html>
