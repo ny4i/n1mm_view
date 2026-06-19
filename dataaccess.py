@@ -407,11 +407,21 @@ def get_qso_band_modes(cursor):
 
 
 def get_qso_classes(cursor):
-    cursor.execute('SELECT COUNT(*), exchange FROM qso_log group by exchange;')
-    exchanges = []
-    for row in cursor:
-        exchanges.append((row[0], row[1]))
-    return exchanges
+    # Group by Field Day class (the first token of the exchange, e.g. "1A",
+    # "2A", "3F") rather than the full "class section" string -- otherwise
+    # every class+section combo (e.g. "2A OH" vs "2A NNJ") fragments into its
+    # own slice and the chart degrades as more sections are worked.
+    cursor.execute('SELECT exchange FROM qso_log;')
+    counts = {}
+    for (exchange,) in cursor:
+        cls = ''
+        if exchange:
+            parts = exchange.split()
+            if parts:
+                cls = parts[0].upper()
+        key = cls if cls else '?'
+        counts[key] = counts.get(key, 0) + 1
+    return [(count, key) for key, count in counts.items()]
 
 
 def get_qso_categories(cursor):
