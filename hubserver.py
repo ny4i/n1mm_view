@@ -43,19 +43,31 @@ app = Flask(__name__)
 # The four station processes we care about, in display order. `port` is the
 # TCP port the service listens on (None = no listener, status from systemd
 # only). `link` controls whether the card offers an "Open" button.
+# `check` is the honest "is it actually serving?" probe beyond systemd state:
+#   tcp  -> a real TCP connect to the port
+#   ntp  -> a real NTP client query to the port (a bound-but-wrong-address
+#           server still fails this, which a plain bind check would not)
+#   udp  -> the port is actually bound (best cheap signal for a UDP listener)
+#   None -> no listener; systemd state is all we have
 SERVICES = [
     {'unit': 'n1mm_view_collector', 'label': 'Collector',
-     'desc': 'Receives N1MM+ style UDP broadcasts', 'port': None, 'link': False},
+     'desc': 'Receives N1MM+ style UDP broadcasts', 'port': 12060,
+     'check': 'udp', 'link': False},
     {'unit': 'n1mm_view_headless', 'label': 'Headless Renderer',
-     'desc': 'Generates the chart images', 'port': None, 'link': False},
+     'desc': 'Generates the chart images', 'port': None,
+     'check': None, 'link': False},
     {'unit': 'n1mm_view_webserver', 'label': 'QSO Dashboard',
-     'desc': 'Live charts & radio sidebar', 'port': 8080, 'link': True},
+     'desc': 'Live charts & radio sidebar', 'port': 8080,
+     'check': 'tcp', 'link': True},
     {'unit': 'tr4wserver', 'label': 'TR4W Server',
-     'desc': 'TR4W logging server', 'port': 8081, 'link': True},
+     'desc': 'TR4W logging server', 'port': 8081,
+     'check': 'tcp', 'link': True},
     {'unit': 'gateway', 'label': 'ClubLog Gateway',
-     'desc': 'Real-time QSO upload to ClubLog', 'port': None, 'link': False},
+     'desc': 'Real-time QSO upload to ClubLog', 'port': 12062,
+     'check': 'udp', 'link': False},
     {'unit': 'chrony', 'label': 'NTP (chrony)',
-     'desc': 'System time synchronization', 'port': None, 'link': False},
+     'desc': 'System time synchronization', 'port': 123,
+     'check': 'ntp', 'link': False},
 ]
 
 
@@ -278,6 +290,45 @@ def _port_open(port, host='127.0.0.1', timeout=0.5):
         return False
 
 
+def _udp_ports():
+    """Set of locally-bound UDP port numbers, parsed from /proc/net/udp[6].
+    The local address column is hex 'IP:PORT'; we only need the port."""
+    ports = set()
+    for path in ('/proc/net/udp', '/proc/net/udp6'):
+        for line in _read_file(path).splitlines()[1:]:
+            cols = line.split()
+            if len(cols) > 1 and ':' in cols[1]:
+                try:
+                    ports.add(int(cols[1].rsplit(':', 1)[1], 16))
+                except ValueError:
+                    pass
+    return ports
+
+
+def _ntp_serving(host='127.0.0.1', port=123, timeout=1.0):
+    """True if an NTP server actually answers a client query on host:port.
+    A daemon bound to the wrong address (or denying us) fails this, which a
+    plain port-bound check would miss."""
+    s = None
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(timeout)
+        s.sendto(b'\x1b' + 47 * b'\x00', (host, port))  # LI=0 VN=3 Mode=3 (client)
+        data, _ = s.recvfrom(48)
+        if len(data) < 48:
+            return False
+        # Reject an unsynchronized server / Kiss-o'-Death: LI=3 (unsync) or
+        # stratum 0 means it answered but isn't actually serving usable time.
+        leap = (data[0] >> 6) & 0x3
+        stratum = data[1]
+        return leap != 3 and 1 <= stratum <= 15
+    except OSError:
+        return False
+    finally:
+        if s is not None:
+            s.close()
+
+
 def _db_stats():
     out = {'event': getattr(config, 'EVENT_NAME', '') or '', 'qso_count': 0,
            'last_qso': '—', 'error': None}
@@ -305,16 +356,27 @@ def _collect_status():
     """Assemble the full status payload used by both the page and /api/status."""
     services = []
     up = 0
+    udp_ports = _udp_ports()  # one snapshot for all udp-checked services
     for s in SERVICES:
         state = _service_status(s['unit'])
-        listening = _port_open(s['port'])
-        # "ok" means systemd says active AND (if it has a port) the port answers.
+        check = s.get('check')
+        # Honest "is it serving?" probe. None when there's nothing to probe.
+        if check == 'tcp':
+            listening = _port_open(s['port'])
+        elif check == 'ntp':
+            listening = _ntp_serving(port=s['port'])
+        elif check == 'udp':
+            listening = s['port'] in udp_ports
+        else:
+            listening = None
+        # "ok" (green) means active AND, if probed, actually serving. A probe
+        # failure on an active unit is "degraded" -> amber in the UI.
         ok = (state == 'active') and (listening is not False)
         if ok:
             up += 1
         services.append({
             'unit': s['unit'], 'label': s['label'], 'desc': s['desc'],
-            'port': s['port'], 'link': s['link'],
+            'port': s['port'], 'link': s['link'], 'check': check,
             'state': state, 'listening': listening, 'ok': ok,
         })
     return {
@@ -443,8 +505,14 @@ PAGE = """<!doctype html>
   function modeLabel(m) { return m === 'fieldday' ? 'FIELD DAY' : m === 'normal' ? 'NORMAL' : 'UNKNOWN'; }
   function stateText(s) {
     var t = s.state;
-    if (s.port) t += s.listening === true ? ', port ' + s.port + ' open'
-                    : (s.listening === false ? ', port ' + s.port + ' DOWN' : '');
+    if (s.listening === null || s.listening === undefined) return t;
+    if (s.check === 'ntp') {
+      t += s.listening ? ', serving NTP' : ', NOT serving NTP';
+    } else if (s.check === 'udp') {
+      t += s.listening ? ', port ' + s.port + ' bound' : ', port ' + s.port + ' NOT bound';
+    } else {
+      t += s.listening ? ', port ' + s.port + ' open' : ', port ' + s.port + ' DOWN';
+    }
     return t;
   }
   function renderNet(n) {
