@@ -82,7 +82,6 @@ CONTEST_SECTIONS = {
     'CO': 'Colorado',
     'CT': 'Connecticut',
     'DE': 'Delaware',
-    'DX': 'DX (outside US/Canada)',
     'EB': 'East Bay',
     'EMA': 'Eastern Massachusetts',
     'ENY': 'Eastern New York',

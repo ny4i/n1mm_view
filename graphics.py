@@ -826,7 +826,7 @@ def draw_radio_info(size, radios):
 def draw_mults_progress(size, qsos_by_mult):
     """
     Draw a multiplier progress display with progress bar and percentage.
-    Shows "67/84 sections worked (80%)" with visual progress bar.
+    Shows "67/85 sections worked (79%)" with visual progress bar.
     Returns (raw_data, size) or (None, (0,0)) if no data.
     """
     logging.debug('draw_mults_progress()')
