@@ -16,7 +16,7 @@ import matplotlib.cm
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import pygame
-from matplotlib.dates import HourLocator, DateFormatter
+from matplotlib.dates import HourLocator, DateFormatter, AutoDateLocator
 
 from config import Config
 from constants import *
@@ -489,7 +489,8 @@ def qso_rates_graph(size, qsos_per_hour):
         ax.stackplot(dates, qso_counts[1], qso_counts[2], qso_counts[3], qso_counts[4], qso_counts[5], qso_counts[6],
                      qso_counts[7], qso_counts[8], qso_counts[9], labels=labels, colors=mcolors.TABLEAU_COLORS,
                      linewidth=0.2)
-        ax.grid(True)
+        # Soft grid so it frames the data without drowning the thin band lines.
+        ax.grid(True, color='#555555', linewidth=0.5, alpha=0.5)
         legend = ax.legend(loc='best', ncol=Bands.count() - 1)
         legend.get_frame().set_color((0, 0, 0, 0))
         legend.get_frame().set_edgecolor('w')
@@ -503,10 +504,12 @@ def qso_rates_graph(size, qsos_per_hour):
         ax.tick_params(axis='x', colors='w')
         ax.set_ylabel('QSO Rate/Hour', color='w', size='x-large', weight='bold')
         ax.set_xlabel('UTC Hour', color='w', size='x-large', weight='bold')
-        hour_locator = HourLocator()
-        hour_formatter = DateFormatter('%H')
-        ax.xaxis.set_major_locator(hour_locator)
-        ax.xaxis.set_major_formatter(hour_formatter)
+        # Adaptive tick/grid density: scales to the actual span so a wide
+        # window (sparse pre-event data spanning days) doesn't pack the axis
+        # with hundreds of gridlines, while a normal event window still gets
+        # hourly-ish ticks.
+        ax.xaxis.set_major_locator(AutoDateLocator(minticks=4, maxticks=12))
+        ax.xaxis.set_major_formatter(DateFormatter('%H'))
     canvas = agg.FigureCanvasAgg(fig)
     canvas.draw()
     renderer = canvas.get_renderer()
