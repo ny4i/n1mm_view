@@ -638,6 +638,9 @@ def write_index_html(image_dir):
   }}
   #radio-live .radio-strip.tx {{ border-color: {t['accent']}; box-shadow: 0 0 6px rgba(233,69,96,0.4); }}
   #radio-live .radio-strip.stale {{ border-color: #444; opacity: 0.55; }}
+  #radio-live .radio-strip.dup {{ border-color: #ff3b3b; box-shadow: 0 0 6px rgba(255,59,59,0.5); }}
+  #radio-live .radio-strip.fromqso {{ background: rgba(255,207,106,0.08); }}
+  #radio-live .station-hdr.dup {{ color: #ff5b5b; font-weight: 700; border-bottom-color: #ff3b3b; }}
   #radio-live .row {{
     display: flex;
     justify-content: space-between;
@@ -1021,22 +1024,37 @@ def write_index_html(image_dir):
         liveEl.appendChild(empty);
         return;
       }}
+      // Map station -> "BAND/GROUP" for live (non-stale) radios that share a
+      // band + mode group, so the header can carry a duplicate alert.
+      var dupLabel = {{}};
+      for (var di = 0; di < radios.length; di++) {{
+        var dr = radios[di];
+        var drStale = (serverNow - (dr.last_update || serverNow)) > 60;
+        if (dr.dup && !drStale) {{
+          dupLabel[dr.station_name] = (dr.band || '?') + '/' + (dr.mode_group || '?');
+        }}
+      }}
       var currentStation = null;
       for (var i = 0; i < radios.length; i++) {{
         var r = radios[i];
         if (r.station_name !== currentStation) {{
           currentStation = r.station_name;
           var hdr = document.createElement('div');
-          hdr.className = 'station-hdr';
-          hdr.textContent = '-- ' + currentStation;
+          var hDup = dupLabel[currentStation];
+          hdr.className = 'station-hdr' + (hDup ? ' dup' : '');
+          hdr.textContent = '-- ' + currentStation +
+            (hDup ? '  ** DUP ' + hDup + ' **' : '');
           liveEl.appendChild(hdr);
         }}
         var age = serverNow - (r.last_update || serverNow);
         var stale = age > 60;
         var tx = !!r.is_transmitting && !stale;
+        var dup = !!r.dup && !stale;
+        var fromqso = r.source === 'contactinfo';
 
         var strip = document.createElement('div');
-        strip.className = 'radio-strip' + (tx ? ' tx' : '') + (stale ? ' stale' : '');
+        strip.className = 'radio-strip' + (tx ? ' tx' : '') + (stale ? ' stale' : '') +
+          (dup ? ' dup' : '') + (fromqso ? ' fromqso' : '');
 
         // Row 1: radio label + operator
         var row1 = document.createElement('div');
@@ -1045,6 +1063,7 @@ def write_index_html(image_dir):
         lbl.className = 'label';
         var radioLabel = 'R' + r.radio_nr;
         if (r.radio_name) radioLabel += '  ' + r.radio_name;
+        if (fromqso) radioLabel += '  (via QSO)';
         lbl.textContent = radioLabel;
         row1.appendChild(lbl);
 

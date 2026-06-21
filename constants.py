@@ -25,9 +25,38 @@ class Bands:
     BANDS_TITLE = ['No Band', '160M', '80M', '40M', '20M', '15M', '10M', '6M', '2M', '70cm']
     BANDS = {elem: index for index, elem in enumerate(BANDS_LIST)}
 
+    # Approximate amateur band edges (Hz) -> band title, for mapping a live
+    # radio frequency to a band (used for the duplicate band/mode alert).
+    BAND_EDGES_HZ = [
+        (1_800_000, 2_000_000, '160M'),
+        (3_500_000, 4_000_000, '80M'),
+        (7_000_000, 7_300_000, '40M'),
+        (10_100_000, 10_150_000, '30M'),
+        (14_000_000, 14_350_000, '20M'),
+        (18_068_000, 18_168_000, '17M'),
+        (21_000_000, 21_450_000, '15M'),
+        (24_890_000, 24_990_000, '12M'),
+        (28_000_000, 29_700_000, '10M'),
+        (50_000_000, 54_000_000, '6M'),
+        (144_000_000, 148_000_000, '2M'),
+        (420_000_000, 450_000_000, '70cm'),
+    ]
+
     @classmethod
     def get_band_number(cls, band_name):
         return Bands.BANDS.get(band_name)
+
+    @classmethod
+    def freq_to_band(cls, freq_hz):
+        """Map a frequency in Hz to a band title (e.g. '20M'), or None."""
+        try:
+            f = int(freq_hz)
+        except (TypeError, ValueError):
+            return None
+        for lo, hi, title in cls.BAND_EDGES_HZ:
+            if lo <= f <= hi:
+                return title
+        return None
 
     @classmethod
     def count(cls):
@@ -67,6 +96,11 @@ class Modes:
     @classmethod
     def get_simple_mode_number(cls, mode_name):
         return Modes.SIMPLE_MODES.get(mode_name)
+
+    @classmethod
+    def get_simple_mode_name(cls, mode_name):
+        """Return the simple mode-group name (CW/PHONE/DATA), or 'N/A'."""
+        return Modes.SIMPLE_MODES_LIST[Modes.SIMPLE_MODES.get(mode_name, 0)]
 
 
 """

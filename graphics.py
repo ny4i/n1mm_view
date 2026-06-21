@@ -195,42 +195,18 @@ def qso_operators_graph(size, qso_operators):
 
 def qso_classes_graph(size, qso_classes):
     """
-    create the QSOs by Operators pie chart
+    create the QSOs by Class pie chart
     """
-    # calculate QSO by class
     if qso_classes is None or len(qso_classes) == 0:
         return None, (0, 0)
-    qso_classes = sorted(qso_classes, key=lambda x: x[0])
-
-    total = 0
-    for qso_class in qso_classes:
-        total += qso_class[0]
-
-    summarize = 0
-    threshold = 2.0
-    for qso_class in qso_classes:
-        pct = qso_class[0] / total * 100.0
-        if pct < threshold:
-            summarize = qso_class[0]
-        else:
-            break
-
-    grouped_qso_classes = []
-    summarized_names = []
-    summarized_values = 0
-
-    for d in qso_classes:
-        if d[0] <= summarize:
-            summarized_names.append(d[1])
-            summarized_values += d[0]
-        else:
-            grouped_qso_classes.append(d)
-    grouped_qso_classes = sorted(grouped_qso_classes, key=lambda x: x[0], reverse=True)
-    grouped_qso_classes.append((summarized_values, f'{len(summarized_names)} others'))
+    # Classes are validated upstream (invalid exchanges are bucketed into '?'),
+    # so the FD class set is small and bounded -- show each as its own slice
+    # rather than collapsing the small ones into an 'others' slice.
+    qso_classes = sorted(qso_classes, key=lambda x: x[0], reverse=True)
 
     labels = []
     values = []
-    for d in grouped_qso_classes:
+    for d in qso_classes:
         labels.append(d[1])
         values.append(d[0])
     return make_pie(size, values, labels, "QSOs by Class")
@@ -663,6 +639,25 @@ def draw_radio_info(size, radios):
 
     logging.debug('draw_radio_info()')
 
+    # Precompute band + simple mode group per radio and count band/group pairs so
+    # we can alert when two radios share a band+category (CW/PHONE/DATA).
+    from collections import Counter
+    bm_counts = Counter()
+    for r in radios:
+        b = Bands.freq_to_band(r.get('freq'))
+        g = Modes.get_simple_mode_name(r.get('mode') or '')
+        r['_band'] = b
+        r['_group'] = g
+        if b and g not in (None, 'N/A'):
+            bm_counts[(b, g)] += 1
+    # Flag dup radios and remember a per-station "BAND/GROUP" label for the header.
+    dup_stations = {}
+    for r in radios:
+        r['_dup'] = bool(r['_band'] and r['_group'] not in (None, 'N/A')
+                         and bm_counts[(r['_band'], r['_group'])] > 1)
+        if r['_dup']:
+            dup_stations[r['station_name']] = '%s/%s' % (r['_band'], r['_group'])
+
     surface_width = size[0]
     surface_height = size[1]
     surf = pygame.Surface((surface_width, surface_height))
@@ -702,12 +697,20 @@ def draw_radio_info(size, radios):
         station = radio['station_name']
         is_stale = (now - radio['last_update']) > stale_threshold
         stale_seconds = now - radio['last_update']
+        is_dup = radio.get('_dup', False)
+        is_contact = radio.get('source') == 'contactinfo'
 
         # Station header
         if station != current_station:
             current_station = station
-            hdr_color = dim_color if is_stale else header_color
-            header_text = strip_label_font.render('-- %s ' % station, True, hdr_color)
+            station_dup = station in dup_stations
+            if station_dup and not is_stale:
+                hdr_color = RED
+                hdr_str = '-- %s  ** DUP %s ** ' % (station, dup_stations[station])
+            else:
+                hdr_color = dim_color if is_stale else header_color
+                hdr_str = '-- %s ' % station
+            header_text = strip_label_font.render(hdr_str, True, hdr_color)
             # Draw header with line
             surf.blit(header_text, (strip_margin, y_cursor))
             line_x = strip_margin + header_text.get_width() + 4
@@ -729,6 +732,10 @@ def draw_radio_info(size, radios):
         if is_stale:
             b_color = dim_color
 
+        # Duplicate band/mode is an alert -- override with a bright red border.
+        if is_dup and not is_stale:
+            b_color = RED
+
         # Draw strip border
         strip_rect = pygame.Rect(strip_margin, y_cursor, strip_width, strip_height)
         pygame.draw.rect(surf, b_color, strip_rect, border_width)
@@ -747,6 +754,8 @@ def draw_radio_info(size, radios):
         radio_label = 'R%d' % radio['radio_nr']
         if radio['radio_name']:
             radio_label += '  %s' % radio['radio_name']
+        if is_contact:
+            radio_label += '  (via QSO)'
         line1_surf = strip_label_font.render(radio_label, True, l_color)
         surf.blit(line1_surf, (inner_x, text_y))
 

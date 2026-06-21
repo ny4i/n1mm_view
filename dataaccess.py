@@ -3,9 +3,15 @@
 import calendar
 from datetime import datetime
 import logging
+import re
 import time
 import constants
 from config import Config
+
+# A valid Field Day class is a transmitter count (1-2 digits) followed by a
+# class letter: A-F for ARRL Field Day, plus O/H/I/M for Winter Field Day.
+# Anything else (e.g. a stray callsign logged into the exchange) is not a class.
+FD_CLASS_RE = re.compile(r'^\d{1,2}[A-FHIOM]$')
 
 __author__ = 'Jeffrey B. Otterson, N1KDO'
 __copyright__ = 'Copyright 2016, 2019, 2020, Jeffrey B. Otterson'
@@ -84,6 +90,7 @@ def create_tables(db, cursor):
                    '     radio_name   CHAR(32),\n'
                    '     antenna      INTEGER,\n'
                    '     last_update  INTEGER NOT NULL,\n'
+                   "     source       CHAR(12) NOT NULL DEFAULT 'radioinfo',\n"
                    '     PRIMARY KEY (station_name, radio_nr));')
 
     # Migration: add is_active column to existing databases
@@ -91,6 +98,14 @@ def create_tables(db, cursor):
         cursor.execute('ALTER TABLE radio_info ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0;')
         db.commit()
         logging.info('Added is_active column to radio_info table')
+    except Exception:
+        pass  # column already exists
+
+    # Migration: add source column ('radioinfo' or 'contactinfo') to existing DBs
+    try:
+        cursor.execute("ALTER TABLE radio_info ADD COLUMN source CHAR(12) NOT NULL DEFAULT 'radioinfo';")
+        db.commit()
+        logging.info('Added source column to radio_info table')
     except Exception:
         pass  # column already exists
 
@@ -131,23 +146,59 @@ def purge_stale_radio_info(db, cursor, max_age_seconds):
 
 def record_radio_info(db, cursor, station_name, radio_nr, freq, tx_freq, mode, op_call,
                       is_running, is_transmitting, is_connected, is_split, is_active,
-                      radio_name, antenna, last_update):
+                      radio_name, antenna, last_update, source='radioinfo'):
     """
-    record or update radio info for a station/radio
+    record or update radio info for a station/radio.
+
+    A real RadioInfo broadcast (source='radioinfo') is authoritative: after
+    storing it we clear any 'contactinfo' placeholder rows for the same station,
+    so a station upgrades cleanly from the QSO-derived fallback to real data.
     """
     try:
         cursor.execute(
             'INSERT OR REPLACE INTO radio_info\n'
             '    (station_name, radio_nr, freq, tx_freq, mode, op_call,\n'
             '     is_running, is_transmitting, is_connected, is_split, is_active,\n'
-            '     radio_name, antenna, last_update)\n'
-            '    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
+            '     radio_name, antenna, last_update, source)\n'
+            '    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
             (station_name, radio_nr, freq, tx_freq, mode, op_call,
              is_running, is_transmitting, is_connected, is_split, is_active,
-             radio_name, antenna, last_update))
+             radio_name, antenna, last_update, source))
+        if source == 'radioinfo':
+            cursor.execute(
+                "DELETE FROM radio_info WHERE station_name = ? AND source = 'contactinfo';",
+                (station_name,))
         db.commit()
     except Exception as err:
         logging.warning('record_radio_info failed: %s' % str(err))
+
+
+def record_radio_info_from_contact(db, cursor, station_name, freq, mode, op_call,
+                                   last_update):
+    """
+    Fallback: derive a radio_info row from a contactinfo (QSO) message so a
+    station that is logging QSOs still appears on the radio display even when
+    its RadioInfo broadcasts are not being received.
+
+    Only writes a 'contactinfo'-sourced placeholder when the station has no
+    'radioinfo' row already -- real RadioInfo always wins and is never clobbered.
+    """
+    try:
+        cursor.execute(
+            "SELECT 1 FROM radio_info WHERE station_name = ? AND source = 'radioinfo' LIMIT 1;",
+            (station_name,))
+        if cursor.fetchone() is not None:
+            return  # authoritative RadioInfo exists; leave it alone
+        cursor.execute(
+            'INSERT OR REPLACE INTO radio_info\n'
+            '    (station_name, radio_nr, freq, tx_freq, mode, op_call,\n'
+            '     is_running, is_transmitting, is_connected, is_split, is_active,\n'
+            '     radio_name, antenna, last_update, source)\n'
+            "    VALUES (?, 1, ?, ?, ?, ?, 0, 0, 0, 0, 0, '', 0, ?, 'contactinfo');",
+            (station_name, freq, freq, mode, op_call, last_update))
+        db.commit()
+    except Exception as err:
+        logging.warning('record_radio_info_from_contact failed: %s' % str(err))
 
 
 def get_radio_info(cursor):
@@ -157,7 +208,7 @@ def get_radio_info(cursor):
     try:
         cursor.execute('SELECT station_name, radio_nr, freq, tx_freq, mode, op_call,\n'
                        '       is_running, is_transmitting, is_connected, is_split,\n'
-                       '       is_active, radio_name, antenna, last_update\n'
+                       '       is_active, radio_name, antenna, last_update, source\n'
                        'FROM radio_info ORDER BY station_name, radio_nr;')
         radios = []
         for row in cursor:
@@ -176,6 +227,7 @@ def get_radio_info(cursor):
                 'radio_name': row[11],
                 'antenna': row[12],
                 'last_update': row[13],
+                'source': row[14],
             })
         return radios
     except Exception:
@@ -417,7 +469,9 @@ def get_qso_classes(cursor):
         cls = ''
         if exchange:
             parts = exchange.split()
-            if parts:
+            # Only accept a well-formed FD class token (e.g. "3A", "2O");
+            # anything else (e.g. a callsign logged into the exchange) -> '?'.
+            if parts and FD_CLASS_RE.match(parts[0].upper()):
                 cls = parts[0].upper()
         key = cls if cls else '?'
         counts[key] = counts.get(key, 0) + 1
@@ -430,8 +484,10 @@ def get_qso_categories(cursor):
     for (exchange,) in cursor:
         cls = ''
         if exchange:
-            token = exchange.split()[0]  # e.g. "1D" from "1D EPA"
-            if token and token[-1].isalpha():
+            token = exchange.split()[0] if exchange.split() else ''
+            # Take the class letter only from a well-formed class token so a
+            # stray callsign (e.g. "W2RT") doesn't masquerade as a category.
+            if FD_CLASS_RE.match(token.upper()):
                 cls = token[-1].upper()
         # Validate against known Field Day classes; bucket anything else into
         # a visible '?' slice rather than inventing a phantom category.

@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from flask import Flask, Response, jsonify, redirect, render_template_string, request, send_from_directory, abort
 
 from config import Config, VERSION
+import constants
 import dataaccess
 
 __author__ = 'Tom Schaefer NY4I'
@@ -88,6 +89,28 @@ def _query_radio_info():
         db.close()
 
 
+def _annotate_radios(radios):
+    """Add band, mode_group, source and a duplicate band/mode flag to each radio.
+
+    Two or more radios sharing the same band + simple mode group (CW/PHONE/DATA)
+    are flagged dup=True so the dashboard can alert -- at Field Day that means two
+    transmitters in one category (a rule violation), and it also surfaces a
+    station-name collision.
+    """
+    for r in radios:
+        r['band'] = constants.Bands.freq_to_band(r.get('freq'))
+        r['mode_group'] = constants.Modes.get_simple_mode_name(r.get('mode') or '')
+        r['source'] = r.get('source') or 'radioinfo'
+    counts = {}
+    for r in radios:
+        if r['band'] and r['mode_group'] not in (None, 'N/A'):
+            counts[(r['band'], r['mode_group'])] = counts.get((r['band'], r['mode_group']), 0) + 1
+    for r in radios:
+        key = (r['band'], r['mode_group'])
+        r['dup'] = bool(r['band'] and r['mode_group'] not in (None, 'N/A') and counts.get(key, 0) > 1)
+    return radios
+
+
 @app.route('/api/radio')
 def api_radio():
     radios = _query_radio_info()
@@ -95,6 +118,7 @@ def api_radio():
     hide = getattr(config, 'RADIO_HIDE_SECONDS', 0)
     if hide and hide > 0:
         radios = [r for r in radios if (now - r['last_update']) <= hide]
+    radios = _annotate_radios(radios)
     return jsonify({
         'server_time': now,
         'radios': radios,
@@ -649,6 +673,11 @@ MOBILE_HTML = r"""<!DOCTYPE html>
           border: 1px solid var(--line); color: var(--muted); }
   .pill.on { color: var(--green); border-color: var(--green); }
   .pill.tx { color: var(--pink); border-color: var(--pink); }
+  .pill.src { color: #ffcf6a; border-color: #ffcf6a; }
+  .pill.dup { color: #ff6b6b; border-color: #ff6b6b; font-weight: 700; }
+  .radio.dup { background: rgba(255,80,80,0.10); border-radius: 6px;
+               box-shadow: inset 0 0 0 1px #ff6b6b; }
+  .radio.fromqso { background: rgba(255,207,106,0.07); border-radius: 6px; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th, td { padding: 0.4rem 0.3rem; text-align: right; font-size: 0.95rem; }
   th:first-child, td:first-child { text-align: left; }
@@ -790,8 +819,17 @@ function renderRadios(d) {
     badges.push('<span class="pill' + (r.is_connected ? ' on' : '') + '">' +
                 (r.is_connected ? 'CONN' : 'no conn') + '</span>');
     if (r.is_transmitting) badges.push('<span class="pill tx">TX</span>');
+    // Source indicator: this row was synthesized from QSO traffic, not a real
+    // RadioInfo broadcast -- go check that station's RadioInfo.
+    if (r.source === 'contactinfo')
+      badges.push('<span class="pill src" title="No RadioInfo received - derived from logged QSOs">via QSO</span>');
+    // Duplicate band/mode alert (two radios in the same band + CW/PH/DATA group).
+    if (r.dup)
+      badges.push('<span class="pill dup">⚠ DUP ' +
+                  esc((r.band || '?') + ' ' + (r.mode_group || '?')) + '</span>');
     const name = r.radio_name || r.station_name || ('Radio ' + (r.radio_nr || ''));
-    return '<div class="radio"><div class="top">' +
+    return '<div class="radio' + (r.dup ? ' dup' : '') +
+      (r.source === 'contactinfo' ? ' fromqso' : '') + '"><div class="top">' +
       '<span class="name">' + esc(name) + '</span>' +
       '<span class="op">' + esc(r.op_call || '') + '</span></div>' +
       '<div class="freq">' + fmtFreq(r.freq) + '</div>' +

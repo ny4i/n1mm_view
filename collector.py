@@ -158,7 +158,7 @@ def convert_timestamp(s):
 _dropped_apps_logged = set()
 
 
-def process_message(parser, db, cursor, operators, stations, message, seen):
+def process_message(parser, db, cursor, operators, stations, message, seen, src_addr=None):
     """
     Process a N1MM+ contactinfo message.
 
@@ -182,27 +182,33 @@ def process_message(parser, db, cursor, operators, stations, message, seen):
     if allowed:
         sender = data.get('app')
         if sender is not None and sender.strip().lower() not in allowed:
-            # Log the first drop per sender at INFO; subsequent at DEBUG.
-            key = sender.strip().lower()
+            # Log the first drop per (app, message type) at WARNING so a
+            # silently-dropped RadioInfo/contactinfo is visible; throttle the
+            # repeats to DEBUG to avoid flooding the log.
+            msg_type = data.get('__messagetype__', '?')
+            key = (sender.strip().lower(), msg_type)
             if key not in _dropped_apps_logged:
                 _dropped_apps_logged.add(key)
-                logging.info('Dropping messages from app=%r (not in ALLOWED_APPS=%s)',
-                             sender, sorted(allowed))
+                logging.warning('Dropping %s message(s) from app=%r (not in ALLOWED_APPS=%s)',
+                                msg_type, sender, sorted(allowed))
             else:
-                logging.debug('Dropped message from app=%r', sender)
+                logging.debug('Dropped %s message from app=%r', msg_type, sender)
             return
 
     logging.debug(f'{data}')
     message_type = data.get('__messagetype__', '')
     logging.debug(f'Received UDP message {message_type}')
 
-    if message_type in ['contactinfo', 'contactreplace']:
+    # Match the message type case-insensitively so a TR4W/N1MM variant that
+    # spells the root element differently (e.g. <Radioinfo>) is still handled.
+    mt = message_type.lower()
+    if mt in ('contactinfo', 'contactreplace'):
         _process_contact(data, db, cursor, operators, stations)
-    elif message_type == 'RadioInfo':
-        _process_radio_info(data, db, cursor)
-    elif message_type == 'contactdelete':
+    elif mt == 'radioinfo':
+        _process_radio_info(data, db, cursor, src_addr)
+    elif mt == 'contactdelete':
         _process_contact_delete(data, db, cursor)
-    elif message_type == 'dynamicresults':
+    elif mt == 'dynamicresults':
         logging.debug('Received Score message')
     else:
         logging.warning(f'unknown message type "{message_type}" received, ignoring.')
@@ -304,8 +310,14 @@ def _process_contact(data, db, cursor, operators, stations):
                                        rx_freq, tx_freq, callsign, rst_sent, rst_recv,
                                        exchange, section, comment, qso_id, state=state)
 
+    # Fallback radio display: keep the station visible on the radio panel from
+    # its QSO traffic even if its RadioInfo broadcasts aren't being received.
+    # Only fills in when no real RadioInfo row exists for the station.
+    dataaccess.record_radio_info_from_contact(db, cursor, station, rx_freq, mode,
+                                              operator, int(time.time()))
 
-def _process_radio_info(data, db, cursor):
+
+def _process_radio_info(data, db, cursor, src_addr=None):
     """Process a RadioInfo message with validation."""
     logging.debug('Received RadioInfo message')
     station_name = data.get('StationName', '').upper()
@@ -358,6 +370,14 @@ def _process_radio_info(data, db, cursor):
                                  is_connected, is_split, is_active, radio_name, antenna,
                                  last_update)
 
+    # Log every recorded RadioInfo so we can confirm which stations are actually
+    # broadcasting radio data and under what (station_name, radio_nr) key. Note a
+    # blank StationName here means the sender omitted it (and NetBiosName too),
+    # which would collide with any other blank-named station on the same radio_nr.
+    src_ip = src_addr[0] if src_addr else '?'
+    logging.info('RadioInfo recorded: src_ip=%s station_name=%r radio_nr=%d freq=%d mode=%r op_call=%r',
+                 src_ip, station_name, radio_nr, freq, mode, op_call)
+
 
 def _process_contact_delete(data, db, cursor):
     """Process a contactdelete message with validation."""
@@ -398,9 +418,9 @@ def message_processor(q, event):
         thread_run = True
         while not event.is_set() and thread_run:
             try:
-                udp_data = q.get()
+                udp_data, src_addr = q.get()
                 message_count += 1
-                process_message(parser, db, cursor, operators, stations, udp_data, seen)
+                process_message(parser, db, cursor, operators, stations, udp_data, seen, src_addr)
             except KeyboardInterrupt:
                 logging.debug('message processor stopping due to keyboard interrupt')
                 thread_run = False
@@ -439,8 +459,8 @@ def main():
             global run
             while run:
                 try:
-                    udp_data = receive_socket.recv(BROADCAST_BUF_SIZE)
-                    q.put(udp_data)
+                    udp_data, src_addr = receive_socket.recvfrom(BROADCAST_BUF_SIZE)
+                    q.put((udp_data, src_addr))
                     # Fan-out a verbatim copy to the forward target, if set.
                     # Never let a forwarding error interfere with collection.
                     if forward_dest:
