@@ -1014,7 +1014,13 @@ def write_index_html(image_dir):
     }}
 
     function renderRadios(data) {{
-      var radios = (data && data.radios) || [];
+      var radios = ((data && data.radios) || []).slice().sort(function(a, b) {{
+        var an = (a.station_name || '').toUpperCase();
+        var bn = (b.station_name || '').toUpperCase();
+        if (an < bn) return -1;
+        if (an > bn) return 1;
+        return (a.radio_nr || 0) - (b.radio_nr || 0);
+      }});
       var serverNow = (data && data.server_time) || Math.floor(Date.now() / 1000);
       liveEl.replaceChildren();
       if (!radios.length) {{

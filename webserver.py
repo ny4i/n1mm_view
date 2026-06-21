@@ -808,7 +808,10 @@ function renderLastQso(d) {
 
 function renderRadios(d) {
   const el = document.getElementById('radios');
-  const rs = (d && d.radios) || [];
+  const rs = ((d && d.radios) || []).slice().sort((a, b) => {
+    const an = (a.station_name || '').toUpperCase(), bn = (b.station_name || '').toUpperCase();
+    return an < bn ? -1 : an > bn ? 1 : (a.radio_nr || 0) - (b.radio_nr || 0);
+  });
   if (!rs.length) { el.innerHTML = '<span class="muted">No active radio.</span>'; return; }
   el.innerHTML = rs.map(r => {
     const badges = [];
