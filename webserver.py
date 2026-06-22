@@ -101,6 +101,9 @@ def _annotate_radios(radios):
         r['band'] = constants.Bands.freq_to_band(r.get('freq'))
         r['mode_group'] = constants.Modes.get_simple_mode_name(r.get('mode') or '')
         r['source'] = r.get('source') or 'radioinfo'
+        # Out of band: outside every ham band, or PHONE below the phone sub-band
+        # edge. Flag it so it's obvious (it's also excluded from dup matching).
+        r['offband'] = constants.Bands.is_out_of_band(r.get('freq'), r['mode_group'])
     counts = {}
     for r in radios:
         if r['band'] and r['mode_group'] not in (None, 'N/A'):
@@ -678,6 +681,9 @@ MOBILE_HTML = r"""<!DOCTYPE html>
   .pill.tx { color: var(--pink); border-color: var(--pink); }
   .pill.src { color: #ffcf6a; border-color: #ffcf6a; }
   .pill.dup { color: #ff6b6b; border-color: #ff6b6b; font-weight: 700; }
+  .pill.offband { color: #ff9f43; border-color: #ff9f43; font-weight: 700; }
+  .radio.offband { background: rgba(255,159,67,0.09); border-radius: 6px;
+                   box-shadow: inset 0 0 0 1px #ff9f43; }
   .radio.dup { background: rgba(255,80,80,0.10); border-radius: 6px;
                box-shadow: inset 0 0 0 1px #ff6b6b; }
   .radio.fromqso { background: rgba(255,207,106,0.07); border-radius: 6px; }
@@ -833,11 +839,14 @@ function renderRadios(d) {
     if (r.dup)
       badges.push('<span class="pill dup">⚠ DUP ' +
                   esc((r.band || '?') + ' ' + (r.mode_group || '?')) + '</span>');
+    // Out of band: outside any ham band, or phone below the phone sub-band edge.
+    if (r.offband)
+      badges.push('<span class="pill offband" title="Out of band: not in a ham band, or phone below the phone sub-band edge">OUT-OF-BAND</span>');
     // Lead with the station (computer) name, like the desktop panels; show the
     // radio number + radio name as a secondary line so that detail is kept too.
     const station = r.station_name || ('Radio ' + (r.radio_nr || ''));
     const radioBits = 'R' + (r.radio_nr || '') + (r.radio_name ? ' · ' + r.radio_name : '');
-    return '<div class="radio' + (r.dup ? ' dup' : '') +
+    return '<div class="radio' + (r.offband ? ' offband' : '') + (r.dup ? ' dup' : '') +
       (r.source === 'contactinfo' ? ' fromqso' : '') + '"><div class="top">' +
       '<span class="name">' + esc(station) + '</span>' +
       '<span class="op">' + esc(r.op_call || '') + '</span></div>' +

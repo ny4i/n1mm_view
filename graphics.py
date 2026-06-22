@@ -699,6 +699,7 @@ def draw_radio_info(size, radios):
         stale_seconds = now - radio['last_update']
         is_dup = radio.get('_dup', False)
         is_contact = radio.get('source') == 'contactinfo'
+        is_offband = Bands.is_out_of_band(radio.get('freq'), radio.get('_group'))
 
         # Station header
         if station != current_station:
@@ -732,7 +733,9 @@ def draw_radio_info(size, radios):
         if is_stale:
             b_color = dim_color
 
-        # Duplicate band/mode is an alert -- override with a bright red border.
+        # Out-of-band -> orange border; duplicate band/mode -> red (takes priority).
+        if is_offband and not is_stale:
+            b_color = ORANGE
         if is_dup and not is_stale:
             b_color = RED
 
@@ -789,6 +792,12 @@ def draw_radio_info(size, radios):
             tx_rect.right = inner_right
             tx_rect.y = text_y
             surf.blit(tx_surf, tx_rect)
+        elif not is_stale and is_offband:
+            ob_surf = strip_status_font.render('OUT-OF-BAND', True, ORANGE)
+            ob_rect = ob_surf.get_rect()
+            ob_rect.right = inner_right
+            ob_rect.centery = text_y + line2_h // 2
+            surf.blit(ob_surf, ob_rect)
 
         text_y += line2_h + strip_padding
 

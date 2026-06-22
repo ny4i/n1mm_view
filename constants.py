@@ -46,6 +46,25 @@ class Bands:
     def get_band_number(cls, band_name):
         return Bands.BANDS.get(band_name)
 
+    # Lower edge (Hz) of the US Extra-class phone/image sub-band per band.
+    # A PHONE-mode signal below this (but still in the band) is in the
+    # CW/data-only segment -> out of band. None = no phone allowed on the band
+    # at all (e.g. 30m), so any phone there is out of band.
+    PHONE_LOWER_HZ = {
+        '160M': 1_800_000,
+        '80M': 3_600_000,
+        '40M': 7_125_000,
+        '30M': None,
+        '20M': 14_150_000,
+        '17M': 18_110_000,
+        '15M': 21_200_000,
+        '12M': 24_930_000,
+        '10M': 28_300_000,
+        '6M': 50_100_000,
+        '2M': 144_100_000,
+        '70cm': 420_000_000,
+    }
+
     @classmethod
     def freq_to_band(cls, freq_hz):
         """Map a frequency in Hz to a band title (e.g. '20M'), or None."""
@@ -57,6 +76,28 @@ class Bands:
             if lo <= f <= hi:
                 return title
         return None
+
+    @classmethod
+    def is_out_of_band(cls, freq_hz, mode_group=None):
+        """True if a (non-zero) frequency is out of band: either outside every
+        ham band, or -- for PHONE mode -- below the Extra-class phone sub-band
+        edge for its band (or on a band where phone isn't allowed)."""
+        try:
+            f = int(freq_hz)
+        except (TypeError, ValueError):
+            return False
+        if not f:
+            return False
+        band = cls.freq_to_band(f)
+        if band is None:
+            return True
+        if mode_group == 'PHONE':
+            lower = cls.PHONE_LOWER_HZ.get(band)
+            if lower is None:
+                return True   # no phone allowed on this band
+            if f < lower:
+                return True
+        return False
 
     @classmethod
     def count(cls):

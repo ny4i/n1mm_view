@@ -638,6 +638,7 @@ def write_index_html(image_dir):
   }}
   #radio-live .radio-strip.tx {{ border-color: {t['accent']}; box-shadow: 0 0 6px rgba(233,69,96,0.4); }}
   #radio-live .radio-strip.stale {{ border-color: #444; opacity: 0.55; }}
+  #radio-live .radio-strip.offband {{ border-color: #ff9f43; box-shadow: 0 0 6px rgba(255,159,67,0.5); }}
   #radio-live .radio-strip.dup {{ border-color: #ff3b3b; box-shadow: 0 0 6px rgba(255,59,59,0.5); }}
   #radio-live .radio-strip.fromqso {{ background: rgba(255,207,106,0.08); }}
   #radio-live .station-hdr.dup {{ color: #ff5b5b; font-weight: 700; border-bottom-color: #ff3b3b; }}
@@ -656,6 +657,7 @@ def write_index_html(image_dir):
     letter-spacing: 0.02em;
   }}
   #radio-live .tx-freq {{ color: #ffa45f; font-size: 0.85rem; }}
+  #radio-live .offband {{ color: #ff9f43; font-size: 0.75rem; font-weight: 700; margin-left: 0.5rem; }}
   #radio-live .status {{
     color: #6fd0ff;
     font-size: 0.7rem;
@@ -1060,7 +1062,7 @@ def write_index_html(image_dir):
 
         var strip = document.createElement('div');
         strip.className = 'radio-strip' + (tx ? ' tx' : '') + (stale ? ' stale' : '') +
-          (dup ? ' dup' : '') + (fromqso ? ' fromqso' : '');
+          (!stale && r.offband ? ' offband' : '') + (dup ? ' dup' : '') + (fromqso ? ' fromqso' : '');
 
         // Row 1: radio label + operator
         var row1 = document.createElement('div');
@@ -1093,6 +1095,12 @@ def write_index_html(image_dir):
           txf.className = 'tx-freq';
           txf.textContent = 'TX: ' + fmtFreq(r.tx_freq);
           row2.appendChild(txf);
+        }}
+        if (!stale && r.offband) {{
+          var ob = document.createElement('span');
+          ob.className = 'offband';
+          ob.textContent = 'OUT-OF-BAND';
+          row2.appendChild(ob);
         }}
         strip.appendChild(row2);
 
