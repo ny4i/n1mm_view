@@ -664,8 +664,11 @@ MOBILE_HTML = r"""<!DOCTYPE html>
   .radio { padding: 0.5rem 0; border-top: 1px solid var(--line); }
   .radio:first-of-type { border-top: 0; padding-top: 0; }
   .radio .top { display: flex; justify-content: space-between; align-items: baseline; }
-  .radio .name { color: var(--muted); font-size: 0.85rem; }
+  .radio .name { color: var(--text); font-size: 0.95rem; font-weight: 600; }
   .radio .op { color: var(--cyan); font-size: 0.85rem; }
+  .radio .sub { color: var(--muted); font-size: 0.72rem; margin-top: 0.1rem; }
+  .radio .mode { color: var(--yellow); font-size: 0.9rem; font-weight: 600;
+                 vertical-align: 0.15rem; margin-left: 0.35rem; }
   .radio .freq { font-size: 1.6rem; font-weight: 700; color: var(--green);
                  font-variant-numeric: tabular-nums; line-height: 1.1; }
   .badges { margin-top: 0.3rem; display: flex; flex-wrap: wrap; gap: 0.35rem; }
@@ -830,12 +833,17 @@ function renderRadios(d) {
     if (r.dup)
       badges.push('<span class="pill dup">⚠ DUP ' +
                   esc((r.band || '?') + ' ' + (r.mode_group || '?')) + '</span>');
-    const name = r.radio_name || r.station_name || ('Radio ' + (r.radio_nr || ''));
+    // Lead with the station (computer) name, like the desktop panels; show the
+    // radio number + radio name as a secondary line so that detail is kept too.
+    const station = r.station_name || ('Radio ' + (r.radio_nr || ''));
+    const radioBits = 'R' + (r.radio_nr || '') + (r.radio_name ? ' · ' + r.radio_name : '');
     return '<div class="radio' + (r.dup ? ' dup' : '') +
       (r.source === 'contactinfo' ? ' fromqso' : '') + '"><div class="top">' +
-      '<span class="name">' + esc(name) + '</span>' +
+      '<span class="name">' + esc(station) + '</span>' +
       '<span class="op">' + esc(r.op_call || '') + '</span></div>' +
-      '<div class="freq">' + fmtFreq(r.freq) + '</div>' +
+      '<div class="sub">' + esc(radioBits) + '</div>' +
+      '<div class="freq">' + fmtFreq(r.freq) +
+        (r.mode ? ' <span class="mode">' + esc(r.mode) + '</span>' : '') + '</div>' +
       '<div class="badges">' + badges.join('') + '</div></div>';
   }).join('');
 }
