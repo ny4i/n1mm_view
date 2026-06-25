@@ -408,6 +408,18 @@ def get_last_qso(cursor):
     return last_qso_time, message
 
 
+def get_qso_count(cursor):
+    """Return the total number of rows in qso_log.
+
+    Used alongside get_last_qso() to detect changes the last-timestamp check
+    misses -- chiefly a contactdelete that removes a QSO other than the newest,
+    which leaves MAX(timestamp) unchanged but lowers the count.
+    """
+    cursor.execute('SELECT COUNT(*) FROM qso_log')
+    row = cursor.fetchone()
+    return row[0] if row else 0
+
+
 def get_operators_by_qsos(cursor):
     logging.debug('Load QSOs by Operator')
     qso_operators = []

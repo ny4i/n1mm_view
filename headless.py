@@ -53,6 +53,22 @@ def makePNGTitle(image_dir, title):
     # return ''.join([image_dir, '/', re.sub('[^\w\-_]', '_', title), '.png'])
 
 
+def save_chart(image_dir, basename, image_data, image_size, blank_size, blank_title):
+    """Persist a freshly-built chart, or a blank placeholder if the builder
+    returned no data.
+
+    The count-based chart builders return (None, ...) when there are no rows to
+    plot (e.g. every QSO was deleted). Without this, the renderer would simply
+    skip the save and leave the previous -- now stale -- PNG on disk, so a wiped
+    or fully-deleted dataset keeps showing the old contacts. Writing a blank
+    instead clears the slot to a clean placeholder.
+    """
+    if image_data is None:
+        image_data, image_size = graphics.make_blank_chart(blank_size, blank_title)
+    filename = makePNGTitle(image_dir, basename)
+    graphics.save_image(image_data, image_size, filename)
+
+
 def create_images(size, image_dir, last_qso_timestamp):
     """
     load data from the database tables
@@ -88,11 +104,20 @@ def create_images(size, image_dir, last_qso_timestamp):
         # get timestamp from the last record in the database
         last_qso_time, message = dataaccess.get_last_qso(cursor)
 
-        logging.debug('old_timestamp = %s, timestamp = %s' % (last_qso_timestamp, last_qso_time))
-        if config.SKIP_TIMESTAMP_CHECK: 
+        # Also track the total QSO count. The last-timestamp check alone misses a
+        # contactdelete that removes any QSO other than the newest (MAX(timestamp)
+        # is unchanged, so without this the count-based charts and the Recent QSOs
+        # sidebar would keep showing the deleted contact). Folding the count into
+        # the signature forces a full regeneration whenever a QSO is added OR
+        # deleted.
+        qso_count = dataaccess.get_qso_count(cursor)
+        signature = (last_qso_time, qso_count)
+
+        logging.debug('old_signature = %s, signature = %s' % (last_qso_timestamp, signature))
+        if config.SKIP_TIMESTAMP_CHECK:
            logging.warn('Skipping check for a recent QSO - Please just use this for debug - Review SKIP_TIMESTAMP_CHECK in ini file')
-        if last_qso_time != last_qso_timestamp or config.SKIP_TIMESTAMP_CHECK:
-            # last_qso_time is passed as the result and updated in call to this function.
+        if signature != last_qso_timestamp or config.SKIP_TIMESTAMP_CHECK:
+            # signature is returned and threaded back in on the next call.
             logging.debug('data updated!')
             data_updated = True
 
@@ -142,101 +167,30 @@ def create_images(size, image_dir, last_qso_timestamp):
             db = None
 
     if data_updated:
-        try:
-            image_data, image_size = graphics.qso_summary_table(size, qso_band_modes)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'qso_summary_table')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)
-        
-        try:
-            image_data, image_size = graphics.qso_rates_table(size, operator_qso_rates)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'qso_rates_table')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)
-        
-        try:
-            image_data, image_size = graphics.qso_operators_graph(size, qso_operators)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'qso_operators_graph')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)
-        
-        try:
-            image_data, image_size = graphics.qso_operators_table(size, qso_operators)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'qso_operators_table')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)
-        
-        try:
-            image_data, image_size = graphics.qso_operators_table_all(size, qso_operators)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'qso_operators_table_all')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)  
-        
-        try:
-            image_data, image_size = graphics.qso_stations_graph(size, qso_stations)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'qso_stations_graph')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)
-        
-        try:
-            image_data, image_size = graphics.qso_bands_graph(size, qso_band_modes)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'qso_bands_graph')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)
-        
-        try:
-            image_data, image_size = graphics.qso_modes_graph(size, qso_band_modes)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'qso_modes_graph')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)
-        
-        try:
-            image_data, image_size = graphics.qso_classes_graph(size, qso_classes)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'qso_classes_graph')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)
-
-        try:
-            image_data, image_size = graphics.qso_categories_graph(size, qso_categories)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'qso_categories_graph')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)
-
-        try:
-            image_data, image_size = graphics.qso_rates_graph(size, qsos_per_hour)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'qso_rates_graph')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)
-            
-        try:
-            image_data, image_size = graphics.qso_table(size, qsos)
-            if image_data is not None:
-               filename = makePNGTitle(image_dir, 'last_qso_table')
-               graphics.save_image(image_data, image_size, filename)
-        except Exception as e:
-            logging.exception(e)
+        # (builder thunk, basename, blank-placeholder title). Builders are called
+        # lazily inside the try below so one failure can't skip the rest. When a
+        # builder returns no data (e.g. all QSOs deleted) save_chart() writes a
+        # blank so the slot clears instead of keeping the previous, stale PNG.
+        count_charts = [
+            (lambda: graphics.qso_summary_table(size, qso_band_modes),      'qso_summary_table',       'QSO Summary'),
+            (lambda: graphics.qso_rates_table(size, operator_qso_rates),    'qso_rates_table',         'QSO Rates'),
+            (lambda: graphics.qso_operators_graph(size, qso_operators),     'qso_operators_graph',     'QSOs by Operator'),
+            (lambda: graphics.qso_operators_table(size, qso_operators),     'qso_operators_table',     'Operator Totals'),
+            (lambda: graphics.qso_operators_table_all(size, qso_operators), 'qso_operators_table_all', 'All Operator Stats'),
+            (lambda: graphics.qso_stations_graph(size, qso_stations),       'qso_stations_graph',      'QSOs by Station'),
+            (lambda: graphics.qso_bands_graph(size, qso_band_modes),        'qso_bands_graph',         'QSOs by Band'),
+            (lambda: graphics.qso_modes_graph(size, qso_band_modes),        'qso_modes_graph',         'QSOs by Mode'),
+            (lambda: graphics.qso_classes_graph(size, qso_classes),         'qso_classes_graph',       'QSOs by Class'),
+            (lambda: graphics.qso_categories_graph(size, qso_categories),   'qso_categories_graph',    'QSOs by Category'),
+            (lambda: graphics.qso_rates_graph(size, qsos_per_hour),         'qso_rates_graph',         'QSO Rate Over Time'),
+            (lambda: graphics.qso_table(size, qsos),                        'last_qso_table',          'Recent QSOs'),
+        ]
+        for builder, basename, blank_title in count_charts:
+            try:
+                image_data, image_size = builder()
+                save_chart(image_dir, basename, image_data, image_size, size, blank_title)
+            except Exception as e:
+                logging.exception(e)
 
     # map gets updated every time so grey line moves
     try:
@@ -282,9 +236,7 @@ def create_images(size, image_dir, last_qso_timestamp):
     if data_updated and config.SHOW_OPERATOR_LEADERBOARD:
         try:
             image_data, image_size = graphics.draw_operator_leaderboard(size, qso_operators)
-            if image_data is not None:
-                filename = makePNGTitle(image_dir, 'operator_leaderboard')
-                graphics.save_image(image_data, image_size, filename)
+            save_chart(image_dir, 'operator_leaderboard', image_data, image_size, size, 'Operator Leaderboard')
         except Exception as e:
             logging.exception(e)
 
@@ -374,7 +326,7 @@ def create_images(size, image_dir, last_qso_timestamp):
        #subprocess.run(args,capture_output=False);
        os.system(config.POST_FILE_COMMAND)
 
-    return last_qso_time
+    return signature
 
 
 def write_index_html(image_dir):
@@ -1419,7 +1371,8 @@ def main():
 #    base_map = graphics.create_map()
 
     run = True
-    last_qso_timestamp = '' 
+    # (last_qso_time, qso_count) signature; sentinel forces a render on first pass.
+    last_qso_timestamp = (None, -1)
     logging.info('headless running...')
     while run:
         try:
