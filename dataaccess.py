@@ -794,6 +794,82 @@ def get_prior_first_qso_curve(prior_db_path):
         return []
 
 
+def get_prior_new_op_curve(prior_db_path, prior_ops_db_path, event_label_regex=None):
+    """
+    Like get_prior_first_qso_curve, but limited to the operators who were NEW in
+    the prior event's year (first appeared that year per the consolidated
+    prior-ops DB). Returns [(offset_seconds_from_event_start, cumulative_new_ops)]
+    anchored to the SAME event start as get_prior_first_qso_curve, so it overlays
+    on the all-ops curve. This is the year-over-year benchmark for the current
+    event's NEW-ops race line. Returns [] on any error or if it can't be built.
+    """
+    import os as _os
+    import re as _re
+    import sqlite3 as _sqlite3
+    if not prior_db_path or not _os.path.isfile(prior_db_path):
+        return []
+    # 1) Names new in the most recent prior year, from the consolidated DB.
+    new_names = set()
+    if not (prior_ops_db_path and _os.path.isfile(prior_ops_db_path)):
+        return []
+    try:
+        cdb = _sqlite3.connect(prior_ops_db_path)
+        try:
+            ccur = cdb.cursor()
+            ccur.execute('SELECT label, event_year FROM event WHERE event_year IS NOT NULL;')
+            events = ccur.fetchall()
+            if event_label_regex:
+                pat = _re.compile(event_label_regex, _re.IGNORECASE)
+                events = [e for e in events if pat.search(e[0] or '')]
+            if not events:
+                return []
+            max_year = max(y for _, y in events)
+
+            def _names_for(labels):
+                names = set()
+                for lab in labels:
+                    ccur.execute('SELECT name FROM operator WHERE event_label = ?;', (lab,))
+                    names |= {row[0].strip().lower() for row in ccur.fetchall()}
+                return names
+
+            latest = _names_for([lab for lab, y in events if y == max_year])
+            earlier = _names_for([lab for lab, y in events if y < max_year])
+            new_names = latest - earlier
+        finally:
+            cdb.close()
+    except Exception as err:
+        logging.warning('get_prior_new_op_curve: consolidated read failed: %s', err)
+        return []
+    if not new_names:
+        return []
+    # 2) Cumulative curve from the prior event DB, counting only new_names, but
+    #    anchored to the event's overall first QSO (same baseline as all-ops).
+    try:
+        pdb = _sqlite3.connect(prior_db_path)
+        try:
+            pcur = pdb.cursor()
+            pcur.execute(
+                'SELECT operator.name, MIN(timestamp) AS first_ts\n'
+                'FROM qso_log JOIN operator ON operator.id = operator_id\n'
+                'GROUP BY operator_id ORDER BY first_ts ASC;')
+            rows = [(r[0], r[1]) for r in pcur.fetchall() if r[1] is not None]
+            if not rows:
+                return []
+            event_start = rows[0][1]
+            curve = []
+            count = 0
+            for name, ts in rows:
+                if name.strip().lower() in new_names:
+                    count += 1
+                    curve.append((ts - event_start, count))
+            return curve
+        finally:
+            pdb.close()
+    except Exception as err:
+        logging.warning('get_prior_new_op_curve failed for %s: %s', prior_db_path, err)
+        return []
+
+
 def get_last_N_qsos(cursor, nQSOCount):
     logging.info('get_last_N_qsos for last %d QSOs' % (nQSOCount))
     qsos = []

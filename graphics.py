@@ -134,6 +134,21 @@ def save_image(image_data, image_size, filename):
     pygame.image.save(surface, filename)
 
 
+def make_blank_chart(size, title, message='— no data yet —'):
+    """Render a blank placeholder chart: black background with a centered title
+    and message. Used to refresh/clear every chart image on demand so the
+    dashboard shows clean placeholders instead of stale data (e.g. after the
+    database is wiped). Returns (raw_data, size) like the other chart builders."""
+    surf = pygame.Surface(size)
+    surf.fill(BLACK)
+    title_surf = strip_label_font.render(title, True, WHITE)
+    surf.blit(title_surf, title_surf.get_rect(centerx=size[0] // 2, top=30))
+    msg_surf = strip_status_font.render(message, True, GRAY)
+    surf.blit(msg_surf, msg_surf.get_rect(center=(size[0] // 2, size[1] // 2)))
+    raw_data = pygame.image.tostring(surf, image_format)
+    return raw_data, surf.get_size()
+
+
 def make_pie(size, values, labels, title):
     """
     make a pie chart using matplotlib.
@@ -659,7 +674,25 @@ def draw_radio_info(size, radios):
             dup_stations[r['station_name']] = '%s/%s' % (r['_band'], r['_group'])
 
     surface_width = size[0]
-    surface_height = size[1]
+
+    # Lay out vertically and size the surface to fit EVERY station + radio. The
+    # rsync'd remote shows this static PNG (no /api/radio to swap to the live
+    # scrollable panel), so a fixed height would silently drop stations off the
+    # bottom. Compute the needed height from the content instead.
+    strip_margin = 10
+    strip_padding = 6
+    border_width = 3
+    line1_h = strip_label_font.get_height()
+    line2_h = strip_freq_font.get_height()
+    line3_h = strip_status_font.get_height()
+    strip_height = line1_h + line2_h + line3_h + strip_padding * 4
+    strip_width = surface_width - 2 * strip_margin
+    title_h = strip_label_font.get_height()
+    num_stations = len(set(r['station_name'] for r in radios))
+    surface_height = (title_h + 15
+                      + num_stations * (line1_h + 4)
+                      + len(radios) * (strip_height + 4)
+                      + strip_margin)
     surf = pygame.Surface((surface_width, surface_height))
     surf.fill(BLACK)
 
@@ -682,14 +715,6 @@ def draw_radio_info(size, radios):
     surf.blit(title_text, title_rect)
 
     y_cursor = title_rect.bottom + 10
-    strip_margin = 10
-    strip_padding = 6
-    line1_h = strip_label_font.get_height()
-    line2_h = strip_freq_font.get_height()
-    line3_h = strip_status_font.get_height()
-    strip_height = line1_h + line2_h + line3_h + strip_padding * 4
-    strip_width = surface_width - 2 * strip_margin
-    border_width = 3
 
     # Group radios by station name
     current_station = None
@@ -1106,12 +1131,15 @@ def draw_operator_leaderboard(size, qso_operators):
 
 
 def draw_new_ops_race(size, current_first_qsos, prior_op_names, prior_curve,
-                      prior_event_label='Last Year'):
+                      prior_new_curve=None, prior_event_label='Last Year'):
     """
     Race-curve chart of cumulative distinct operators over event-elapsed time.
 
     Series:
-      - Prior event (reference): from prior_curve, (elapsed_secs, count) pairs.
+      - Prior event ALL (reference): from prior_curve, (elapsed_secs, count) pairs.
+      - Prior event NEW (reference): from prior_new_curve -- the operators who
+        were new in the prior event's year, so the current NEW line has a true
+        new-vs-new benchmark to race.
       - Current event TOTAL: cumulative distinct operators in current_first_qsos.
       - Current event NEW:   subset whose name is not in prior_op_names.
 
@@ -1140,6 +1168,7 @@ def draw_new_ops_race(size, current_first_qsos, prior_op_names, prior_curve,
         cur_new_pts.append((offset_h, new_total))
 
     prior_pts = [(secs / 3600.0, n) for secs, n in (prior_curve or [])]
+    prior_new_pts = [(secs / 3600.0, n) for secs, n in (prior_new_curve or [])]
 
     # Plot
     width_inches = size[0] / 100.0
@@ -1166,8 +1195,13 @@ def draw_new_ops_race(size, current_first_qsos, prior_op_names, prior_curve,
     drawn = False
     if prior_pts:
         xs, ys = _step(prior_pts)
-        ax.plot(xs, ys, color='#888888', linewidth=3, label=prior_event_label,
-                linestyle='--')
+        ax.plot(xs, ys, color='#888888', linewidth=3,
+                label='%s — All Ops' % prior_event_label, linestyle='--')
+        drawn = True
+    if prior_new_pts:
+        xs, ys = _step(prior_new_pts)
+        ax.plot(xs, ys, color='#c9a227', linewidth=3,
+                label='%s — NEW Ops' % prior_event_label, linestyle='--')
         drawn = True
     if cur_total_pts:
         xs, ys = _step(cur_total_pts)
@@ -1192,6 +1226,7 @@ def draw_new_ops_race(size, current_first_qsos, prior_op_names, prior_curve,
         cur_total_pts[-1][0] if cur_total_pts else 0,
         cur_new_pts[-1][0] if cur_new_pts else 0,
         prior_pts[-1][0] if prior_pts else 0,
+        prior_new_pts[-1][0] if prior_new_pts else 0,
     )
     ax.set_xlim(0, max(event_hours, data_hours))
 
@@ -1200,6 +1235,7 @@ def draw_new_ops_race(size, current_first_qsos, prior_op_names, prior_curve,
         cur_total_pts[-1][1] if cur_total_pts else 0,
         cur_new_pts[-1][1] if cur_new_pts else 0,
         prior_pts[-1][1] if prior_pts else 0,
+        prior_new_pts[-1][1] if prior_new_pts else 0,
     )
     ax.set_ylim(0, max(5, y_max + 2))
 

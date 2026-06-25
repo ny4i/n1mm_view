@@ -300,11 +300,15 @@ def get_mult_dictionary():
     return CONTEST_SECTIONS
 
 
+def get_mult_name():
+    """Return the multiplier noun for the configured contest ('States' or
+    'Sections'), for titling charts like '<name> Progress' / '<name> Remaining'."""
+    return 'States' if config.MULTS == 'STATES' else 'Sections'
+
+
 def get_mult_title():
     """Return the appropriate title based on config.MULTS."""
-    if config.MULTS == 'STATES':
-        return 'States Worked'
-    return 'Sections Worked'
+    return '%s Worked' % get_mult_name()
 
 
 # Category letter descriptions for exchange classes.
