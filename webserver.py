@@ -167,14 +167,27 @@ def api_new_ops():
             'mode': mode,
             'worked': r.get('worked') or '',
         })
+    # prior_new = the prior reference event's *new*-operator count (year-over-year),
+    # so "N new this event" compares against new-vs-new (e.g. 2025 FD had 7 new,
+    # not its 25 total). Pulled from the same YoY computation the chart uses.
+    prior_new = None
+    try:
+        yoy = dataaccess.get_yoy_new_op_counts(
+            getattr(config, 'PRIOR_OPERATORS_DB', ''),
+            event_label_regex=getattr(config, 'YOY_EVENT_REGEX', None))
+        if yoy:
+            prior_new = yoy[-1][3]  # most recent prior event's new_ops
+    except Exception:
+        prior_new = None
     return jsonify({
         'server_time': int(time.time()),
         'event_name': config.EVENT_NAME,
         'prior_event_label': getattr(config, 'PRIOR_EVENT_LABEL', ''),
-        # prior_total = last reference event only (e.g. 2025 FD = 25);
-        # all_prior_total = union across every imported prior event
-        # (e.g. 75 across 2019-2025).
+        # prior_total = last reference event's TOTAL ops (e.g. 2025 FD = 25);
+        # prior_new   = that event's NEW ops year-over-year (e.g. 7);
+        # all_prior_total = union across every imported prior event (e.g. 75).
         'prior_total': len(last_event_names) if last_event_names else None,
+        'prior_new': prior_new,
         'all_prior_total': len(prior_names) if prior_names else None,
         'total_ops': len(cur_first),
         'total_new': len(new_ops),
@@ -875,8 +888,8 @@ function renderSummary(d) {
 function renderNewOps(d) {
   const el = document.getElementById('newops');
   if (!d) { el.innerHTML = '<span class="muted">—</span>'; return; }
-  const prior = (d.prior_total != null)
-    ? (' (' + d.prior_total + (d.prior_event_label ? ' in ' + esc(d.prior_event_label) : ' prior') + ')')
+  const prior = (d.prior_new != null)
+    ? (' (' + d.prior_new + ' new' + (d.prior_event_label ? ' in ' + esc(d.prior_event_label) : ' prior') + ')')
     : '';
   let html = '<div><b style="color:var(--yellow)">' + (d.total_new || 0) +
     '</b> new this event' + prior + '</div>';

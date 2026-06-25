@@ -308,11 +308,17 @@ def create_images(size, image_dir, last_qso_timestamp):
                 prior_names, _, _ = dataaccess.get_prior_operator_names(config.PRIOR_DB_FILENAME)
             prior_curve = dataaccess.get_prior_first_qso_curve(config.PRIOR_DB_FILENAME) \
                 if config.SHOW_NEW_OPS_RACE else []
+            prior_new_curve = dataaccess.get_prior_new_op_curve(
+                config.PRIOR_DB_FILENAME,
+                getattr(config, 'PRIOR_OPERATORS_DB', ''),
+                event_label_regex=getattr(config, 'YOY_EVENT_REGEX', None)) \
+                if config.SHOW_NEW_OPS_RACE else []
 
             if config.SHOW_NEW_OPS_RACE:
                 try:
                     image_data, image_size = graphics.draw_new_ops_race(
                         size, cur_first, prior_names, prior_curve,
+                        prior_new_curve=prior_new_curve,
                         prior_event_label=config.PRIOR_EVENT_LABEL)
                     if image_data is not None:
                         filename = makePNGTitle(image_dir, 'new_ops_race')
@@ -403,11 +409,14 @@ def write_index_html(image_dir):
         ('QSOs by Category', 'qso_categories_graph.png', 'img'),
     ]
 
-    # Add optional slides based on config (radio_info is in sidebar)
+    # Add optional slides based on config (radio_info is in sidebar). The
+    # multiplier slides are titled by contest type (Sections/States) to match
+    # the title rendered inside the chart image.
+    mult_name = constants.get_mult_name()
     if config.SHOW_MULT_PROGRESS:
-        slides.append(('Multiplier Progress', 'mults_progress.png', 'img'))
+        slides.append((f'{mult_name} Progress', 'mults_progress.png', 'img'))
     if config.SHOW_MULT_REMAINING:
-        slides.append(('Multipliers Remaining', 'mults_remaining.png', 'img'))
+        slides.append((f'{mult_name} Remaining', 'mults_remaining.png', 'img'))
     if config.SHOW_OPERATOR_LEADERBOARD:
         slides.append(('Operator Leaderboard', 'operator_leaderboard.png', 'img'))
     if config.SHOW_NEW_OPS_RACE:
@@ -1298,10 +1307,10 @@ def write_index_html(image_dir):
       var hdr = document.createElement('div');
       hdr.className = 'new-ops-summary';
       var thisYear = (data && data.total_new) || 0;
-      var lastYear = (data && data.prior_total);
+      var lastYear = (data && data.prior_new);
       var lastLabel = (data && data.prior_event_label) || 'last event';
       hdr.textContent = thisYear + ' new this event' +
-        (lastYear != null ? '  (' + lastYear + ' in ' + lastLabel + ')' : '');
+        (lastYear != null ? '  (' + lastYear + ' new in ' + lastLabel + ')' : '');
       liveEl.appendChild(hdr);
 
       if (!newOps.length) {{
