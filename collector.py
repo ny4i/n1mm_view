@@ -288,10 +288,18 @@ def _process_contact(data, db, cursor, operators, stations):
     band = data.get('band')
     mode = data.get('mode', '').upper()
     operator = data.get('operator', '').upper()
-    station_name = data.get('StationName', '').upper()
-    if station_name is None or station_name == '':
-        station_name = data.get('NetBiosName', '')
-    station = station_name.upper()
+    # QSO/station identity: friendly StationName (with NetBiosName as a last resort).
+    # This is what the by-station QSO counts display, so keep it human-readable and
+    # stable across the contest.
+    station = (data.get('StationName', '') or data.get('NetBiosName', '')).upper()
+    # Radio-panel identity: the machine name, which is the ONLY identifier both
+    # packet types agree on. ContactInfo carries <StationName> (friendly, "STATION1")
+    # AND <NetBiosName> (machine, "STATION-1"); RadioInfo carries only <StationName>,
+    # and there it holds the machine name. Keying the radio fallback row on the
+    # machine name (NetBiosName, else StationName) makes it match the RadioInfo row
+    # for the same PC, so one station no longer shows twice ("STATION1" vs
+    # "STATION-1") on the radio panel.
+    radio_station = (data.get('NetBiosName', '') or data.get('StationName', '')).upper()
     callsign = data.get('call', '').upper()
     rst_sent = data.get('snt')
     rst_recv = data.get('rcv')
@@ -312,17 +320,19 @@ def _process_contact(data, db, cursor, operators, stations):
 
     # Fallback radio display: keep the station visible on the radio panel from
     # its QSO traffic even if its RadioInfo broadcasts aren't being received.
-    # Only fills in when no real RadioInfo row exists for the station.
-    dataaccess.record_radio_info_from_contact(db, cursor, station, rx_freq, mode,
+    # Only fills in when no real RadioInfo row exists for the station. Keyed by the
+    # machine name so it shares an identity with the RadioInfo rows (see above).
+    dataaccess.record_radio_info_from_contact(db, cursor, radio_station, rx_freq, mode,
                                               operator, int(time.time()))
 
 
 def _process_radio_info(data, db, cursor, src_addr=None):
     """Process a RadioInfo message with validation."""
     logging.debug('Received RadioInfo message')
-    station_name = data.get('StationName', '').upper()
-    if station_name == '':
-        station_name = data.get('NetBiosName', '').upper()
+    # Same identity rule as _process_contact: NetBiosName (machine name) if present,
+    # else StationName. RadioInfo carries only <StationName>, which holds the machine
+    # name, so this resolves to the same key ContactInfo uses for the same PC.
+    station_name = (data.get('NetBiosName', '') or data.get('StationName', '')).upper()
 
     # Validate numeric fields with defaults
     try:
@@ -372,8 +382,9 @@ def _process_radio_info(data, db, cursor, src_addr=None):
 
     # Log every recorded RadioInfo so we can confirm which stations are actually
     # broadcasting radio data and under what (station_name, radio_nr) key. Note a
-    # blank StationName here means the sender omitted it (and NetBiosName too),
-    # which would collide with any other blank-named station on the same radio_nr.
+    # blank station_name here means the sender omitted both NetBiosName and
+    # StationName, which would collide with any other blank-named station on the
+    # same radio_nr.
     src_ip = src_addr[0] if src_addr else '?'
     logging.info('RadioInfo recorded: src_ip=%s station_name=%r radio_nr=%d freq=%d mode=%r op_call=%r',
                  src_ip, station_name, radio_nr, freq, mode, op_call)
