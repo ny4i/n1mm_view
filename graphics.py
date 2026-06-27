@@ -663,12 +663,15 @@ def draw_radio_info(size, radios):
         g = Modes.get_simple_mode_name(r.get('mode') or '')
         r['_band'] = b
         r['_group'] = g
-        if b and g not in (None, 'N/A'):
+        # Only live radios count toward collisions. Stale (greyed-out) leftovers
+        # of stations that have gone away must not flag a live radio as a DUP.
+        r['_live'] = (now - r['last_update']) <= stale_threshold
+        if r['_live'] and b and g not in (None, 'N/A'):
             bm_counts[(b, g)] += 1
     # Flag dup radios and remember a per-station "BAND/GROUP" label for the header.
     dup_stations = {}
     for r in radios:
-        r['_dup'] = bool(r['_band'] and r['_group'] not in (None, 'N/A')
+        r['_dup'] = bool(r['_live'] and r['_band'] and r['_group'] not in (None, 'N/A')
                          and bm_counts[(r['_band'], r['_group'])] > 1)
         if r['_dup']:
             dup_stations[r['station_name']] = '%s/%s' % (r['_band'], r['_group'])

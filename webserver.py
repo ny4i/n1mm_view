@@ -63,6 +63,11 @@ SERVICES = [
     'n1mm_view_webserver',
 ]
 
+# A radio whose last_update is older than this is considered stale: the
+# dashboard greys it out and it no longer participates in duplicate detection.
+# Matches the 60s dim threshold used by headless.py and graphics.draw_radio_info.
+STALE_SECONDS = 60
+
 CONFIG_KEYS = [
     'DATABASE_FILENAME', 'IMAGE_DIR', 'EVENT_NAME',
     'EVENT_START_TIME', 'EVENT_END_TIME',
@@ -97,6 +102,7 @@ def _annotate_radios(radios):
     transmitters in one category (a rule violation), and it also surfaces a
     station-name collision.
     """
+    now = int(time.time())
     for r in radios:
         r['band'] = constants.Bands.freq_to_band(r.get('freq'))
         r['mode_group'] = constants.Modes.get_simple_mode_name(r.get('mode') or '')
@@ -104,13 +110,20 @@ def _annotate_radios(radios):
         # Out of band: outside every ham band, or PHONE below the phone sub-band
         # edge. Flag it so it's obvious (it's also excluded from dup matching).
         r['offband'] = constants.Bands.is_out_of_band(r.get('freq'), r['mode_group'])
+    # Only live (non-stale) radios participate in collision detection. Stale rows
+    # are the greyed-out leftovers of stations that have gone away; counting them
+    # would falsely flag a live radio as a DUP of an old, idle one. Use the same
+    # 60s staleness window the renderer uses to grey a row out.
+    def _live(r):
+        return (now - (r.get('last_update') or now)) <= STALE_SECONDS
     counts = {}
     for r in radios:
-        if r['band'] and r['mode_group'] not in (None, 'N/A'):
+        if _live(r) and r['band'] and r['mode_group'] not in (None, 'N/A'):
             counts[(r['band'], r['mode_group'])] = counts.get((r['band'], r['mode_group']), 0) + 1
     for r in radios:
         key = (r['band'], r['mode_group'])
-        r['dup'] = bool(r['band'] and r['mode_group'] not in (None, 'N/A') and counts.get(key, 0) > 1)
+        r['dup'] = bool(_live(r) and r['band'] and r['mode_group'] not in (None, 'N/A')
+                        and counts.get(key, 0) > 1)
     return radios
 
 
