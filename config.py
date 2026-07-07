@@ -91,7 +91,7 @@ class Config(metaclass = Singleton):
         logging.info ('Using database file %s' % (self.DATABASE_FILENAME))
 
         self.MULTS = cfg.get('GLOBAL', 'MULTS', fallback='SECTIONS').upper()
-        if self.MULTS not in ('SECTIONS', 'STATES'):
+        if self.MULTS not in ('SECTIONS', 'STATES', 'ITUZONES', 'CQZONES', 'GRID'):
             logging.warning('Invalid MULTS value "%s", defaulting to SECTIONS' % self.MULTS)
             self.MULTS = 'SECTIONS'
         logging.info('MULTS mode set to %s' % self.MULTS)
@@ -137,7 +137,7 @@ class Config(metaclass = Singleton):
         # N1MM Logger+ uses "N1MMLogger.Net"; TR4W variants include "TR4W"
         # and "TR4QT"; DXLab uses "DXLab".
         allowed_apps_raw = cfg.get('N1MM INFO', 'ALLOWED_APPS',
-                                   fallback='N1MMLogger.Net,TR4W')
+                                   fallback='N1MM,TR4W')
         self.ALLOWED_APPS = {a.strip().lower()
                              for a in allowed_apps_raw.split(',')
                              if a.strip()}
@@ -148,6 +148,16 @@ class Config(metaclass = Singleton):
         
         self.QTH_LATITUDE = cfg.getfloat('EVENT INFO','QTH_LATITUDE')
         self.QTH_LONGITUDE = cfg.getfloat('EVENT INFO','QTH_LONGITUDE')
+
+        # Map appearance [MAP]. Base-feature fills (ocean/land/lake) -- the
+        # default land green (#113311) is quite dark, so it's configurable to
+        # lighten the unworked continents. The worked-multiplier choropleth ramp
+        # is unchanged (viridis). TERMINATOR_ALPHA is the day/night shading
+        # opacity (0 = off, 1 = solid black night side).
+        self.MAP_OCEAN_COLOR = cfg.get('MAP', 'OCEAN_COLOR', fallback='#000080')
+        self.MAP_LAND_COLOR = cfg.get('MAP', 'LAND_COLOR', fallback='#113311')
+        self.MAP_LAKE_COLOR = cfg.get('MAP', 'LAKE_COLOR', fallback='#000080')
+        self.MAP_TERMINATOR_ALPHA = cfg.getfloat('MAP', 'TERMINATOR_ALPHA', fallback=0.25)
         self.DISPLAY_DWELL_TIME = cfg.getint('GLOBAL','DISPLAY_DWELL_TIME',fallback=6)
         self.DATA_DWELL_TIME = cfg.getint('GLOBAL','DATA_DWELL_TIME',fallback=60)
         self.HEADLESS_DWELL_TIME = cfg.getint('GLOBAL','HEADLESS_DWELL_TIME',fallback=180)
@@ -181,7 +191,27 @@ class Config(metaclass = Singleton):
         self.SHOW_MULT_PROGRESS = cfg.getboolean('FEATURES', 'SHOW_MULT_PROGRESS', fallback=False)
         self.SHOW_MULT_REMAINING = cfg.getboolean('FEATURES', 'SHOW_MULT_REMAINING', fallback=False)
         self.SHOW_MULT_ALERT = cfg.getboolean('FEATURES', 'SHOW_MULT_ALERT', fallback=False)
+        # Maidenhead grids have no fixed multiplier total, so the progress and
+        # remaining charts (which need a denominator) don't apply -- force them
+        # off in GRID mode regardless of the ini. The new-mult alert still works
+        # (it fires on each newly worked grid).
+        if self.MULTS == 'GRID' and (self.SHOW_MULT_PROGRESS or self.SHOW_MULT_REMAINING):
+            logging.info('MULTS=GRID: disabling multiplier progress/remaining charts (no fixed total)')
+            self.SHOW_MULT_PROGRESS = False
+            self.SHOW_MULT_REMAINING = False
         self.SHOW_OPERATOR_LEADERBOARD = cfg.getboolean('FEATURES', 'SHOW_OPERATOR_LEADERBOARD', fallback=False)
+        # IARU HF HQ-station multiplier roster (worked/total grid). Independent of
+        # the ITU-zone map -- HQ stations are a second IARU multiplier, logged as
+        # a society abbreviation in the section field. Only meaningful for IARU.
+        self.SHOW_HQ_STATIONS = cfg.getboolean('FEATURES', 'SHOW_HQ_STATIONS', fallback=False)
+
+        # Base count charts. These default ON (opt-out) so existing multi-op/FD
+        # setups are unchanged; single-station or non-FD events can hide the ones
+        # that don't apply -- QSOs by Station (one station), and Class/Category
+        # (Field Day exchange concepts, empty for e.g. IARU).
+        self.SHOW_QSOS_BY_STATION = cfg.getboolean('FEATURES', 'SHOW_QSOS_BY_STATION', fallback=True)
+        self.SHOW_QSOS_BY_CLASS = cfg.getboolean('FEATURES', 'SHOW_QSOS_BY_CLASS', fallback=True)
+        self.SHOW_QSOS_BY_CATEGORY = cfg.getboolean('FEATURES', 'SHOW_QSOS_BY_CATEGORY', fallback=True)
 
         # New-operator tracking: compare current event ops against a prior
         # event's operator table. An operator who logs a QSO this event and
@@ -219,5 +249,5 @@ class Config(metaclass = Singleton):
         if self.EXTERNAL_SLIDES:
             logging.info('External slides: %s', [t for t, _ in self.EXTERNAL_SLIDES])
 
-        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, OPERATOR_LEADERBOARD=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
-                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)
+        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, HQ_STATIONS=%s, OPERATOR_LEADERBOARD=%s, QSOS_BY_STATION=%s, QSOS_BY_CLASS=%s, QSOS_BY_CATEGORY=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
+                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_HQ_STATIONS, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_QSOS_BY_STATION, self.SHOW_QSOS_BY_CLASS, self.SHOW_QSOS_BY_CATEGORY, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)

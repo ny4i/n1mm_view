@@ -48,7 +48,7 @@ CHARTS = [
     ('qso_modes_graph.png',          'QSOs by Mode'),
     ('qso_classes_graph.png',        'QSOs by Class'),
     ('qso_categories_graph.png',     'QSOs by Category'),
-    ('mults_progress.png',           '%s Progress' % constants.get_mult_name()),
+    ('mults_progress.png',           'Multiplier Progress'),
     ('mults_remaining.png',          '%s Remaining' % constants.get_mult_name()),
     ('operator_leaderboard.png',     'Operator Leaderboard'),
     # Recent QSOs sidebar (derived from qso_log, so it should clear on a DB wipe).

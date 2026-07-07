@@ -41,7 +41,8 @@ RADIO_INFO_INDEX = 12
 MULTS_PROGRESS_INDEX = 13
 MULTS_REMAINING_INDEX = 14
 OPERATOR_LEADERBOARD_INDEX = 15
-IMAGE_COUNT = 16
+HQ_STATIONS_INDEX = 16
+IMAGE_COUNT = 17
 
 IMAGE_MESSAGE = 1
 CRAWL_MESSAGE = 2
@@ -109,8 +110,17 @@ def load_data(size, q, last_qso_timestamp):
         # This has to be done even if no new QSO to advance gray line and since the map is always drawn.
         if config.MULTS == 'STATES':
             qsos_by_section = dataaccess.get_qsos_by_state(cursor)
+        elif config.MULTS == 'ITUZONES':
+            qsos_by_section = dataaccess.get_qsos_by_ituzone(cursor)
+        elif config.MULTS == 'CQZONES':
+            qsos_by_section = dataaccess.get_qsos_by_cqzone(cursor)
+        elif config.MULTS == 'GRID':
+            qsos_by_section = dataaccess.get_qsos_by_grid(cursor)
         else:
             qsos_by_section = dataaccess.get_qsos_by_section(cursor)
+
+        # load IARU HQ-station multiplier counts (independent of the zone map)
+        qsos_by_hq = dataaccess.get_qsos_by_hq(cursor) if config.SHOW_HQ_STATIONS else {}
 
         # Check for new multipliers and send alert
         if config.SHOW_MULT_ALERT:
@@ -168,11 +178,12 @@ def load_data(size, q, last_qso_timestamp):
             enqueue_image(q, QSO_OPERATORS_TABLE_INDEX, image_data, image_size)
         except Exception as e:
             logging.exception(e)
-        try:
-            image_data, image_size = graphics.qso_stations_graph(size, qso_stations)
-            enqueue_image(q, QSO_STATIONS_PIE_INDEX, image_data, image_size)
-        except Exception as e:
-            logging.exception(e)
+        if config.SHOW_QSOS_BY_STATION:
+            try:
+                image_data, image_size = graphics.qso_stations_graph(size, qso_stations)
+                enqueue_image(q, QSO_STATIONS_PIE_INDEX, image_data, image_size)
+            except Exception as e:
+                logging.exception(e)
         try:
             image_data, image_size = graphics.qso_bands_graph(size, qso_band_modes)
             enqueue_image(q, QSO_BANDS_PIE_INDEX, image_data, image_size)
@@ -183,16 +194,18 @@ def load_data(size, q, last_qso_timestamp):
             enqueue_image(q, QSO_MODES_PIE_INDEX, image_data, image_size)
         except Exception as e:
             logging.exception(e)
-        try:
-            image_data, image_size = graphics.qso_classes_graph(size, qso_classes)
-            enqueue_image(q, QSO_CLASSES_PIE_INDEX, image_data, image_size)
-        except Exception as e:
-            logging.exception(e)
-        try:
-            image_data, image_size = graphics.qso_categories_graph(size, qso_categories)
-            enqueue_image(q, QSO_CATEGORIES_PIE_INDEX, image_data, image_size)
-        except Exception as e:
-            logging.exception(e)
+        if config.SHOW_QSOS_BY_CLASS:
+            try:
+                image_data, image_size = graphics.qso_classes_graph(size, qso_classes)
+                enqueue_image(q, QSO_CLASSES_PIE_INDEX, image_data, image_size)
+            except Exception as e:
+                logging.exception(e)
+        if config.SHOW_QSOS_BY_CATEGORY:
+            try:
+                image_data, image_size = graphics.qso_categories_graph(size, qso_categories)
+                enqueue_image(q, QSO_CATEGORIES_PIE_INDEX, image_data, image_size)
+            except Exception as e:
+                logging.exception(e)
         try:
             image_data, image_size = graphics.qso_rates_graph(size, qsos_per_hour)
             enqueue_image(q, QSO_RATE_CHART_IMAGE_INDEX, image_data, image_size)
@@ -224,6 +237,13 @@ def load_data(size, q, last_qso_timestamp):
         try:
             image_data, image_size = graphics.draw_mults_remaining(size, qsos_by_section)
             enqueue_image(q, MULTS_REMAINING_INDEX, image_data, image_size)
+        except Exception as e:
+            logging.exception(e)
+
+    if config.SHOW_HQ_STATIONS:
+        try:
+            image_data, image_size = graphics.draw_hq_stations(size, qsos_by_hq)
+            enqueue_image(q, HQ_STATIONS_INDEX, image_data, image_size)
         except Exception as e:
             logging.exception(e)
 

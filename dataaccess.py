@@ -53,6 +53,10 @@ def create_tables(db, cursor):
                    '     exchange char(4),\n'
                    '     section char(4),\n'
                    '     state char(4),\n'
+                   '     ituzone INTEGER,\n'
+                   '     cqzone INTEGER,\n'
+                   '     prefix char(4),\n'
+                   '     grid char(6),\n'
                    '     comment TEXT,\n'
                    '     qso_id  char(32) PRIMARY KEY NOT NULL);')  # this is primary key to speed up Update & Delete
 
@@ -66,14 +70,57 @@ def create_tables(db, cursor):
     except Exception:
         pass  # column already exists
 
+    # Migration: add duplicate flag to pre-existing databases. 0 = counts,
+    # 1 = Field Day dupe (same callsign+band+simple-mode group, worked again) and
+    # must be excluded from scoring. Set by find_dupes.py --apply; defaults to 0
+    # so existing rows and live logging are unaffected until that pass is run.
+    try:
+        cursor.execute('ALTER TABLE qso_log ADD COLUMN duplicate INTEGER NOT NULL DEFAULT 0;')
+        db.commit()
+        logging.info('Added duplicate column to qso_log table')
+    except Exception:
+        pass  # column already exists
+
+    # Migration: add own_effort flag. 1 = the worked callsign belongs to one of
+    # our own site operators (working your own effort is not allowed) and the
+    # QSO must be excluded from scoring. Set by check_operator_worked.py --apply.
+    # Kept separate from `duplicate` so the two checks never clobber each other.
+    try:
+        cursor.execute('ALTER TABLE qso_log ADD COLUMN own_effort INTEGER NOT NULL DEFAULT 0;')
+        db.commit()
+        logging.info('Added own_effort column to qso_log table')
+    except Exception:
+        pass  # column already exists
+
+    # Migration: add exchange-type multiplier columns to pre-existing databases.
+    # These hold the alternate exchanges some contests use instead of an ARRL
+    # section: ituzone (IARU HF), cqzone (CQ WW/WPX), prefix (WPX). Stored as
+    # flat columns rather than a lookup table since only one applies per contest.
+    for col, coldef in (('ituzone', 'ituzone INTEGER'),
+                        ('cqzone', 'cqzone INTEGER'),
+                        ('prefix', 'prefix char(4)'),
+                        ('grid', 'grid char(6)')):
+        try:
+            cursor.execute('ALTER TABLE qso_log ADD COLUMN %s;' % coldef)
+            db.commit()
+            logging.info('Added %s column to qso_log table', col)
+        except Exception:
+            pass  # column already exists
+
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_band_id ON qso_log(band_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_mode_id ON qso_log(mode_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_operator_id ON qso_log(operator_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_station_id ON qso_log(station_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_section ON qso_log(section);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_state ON qso_log(state);')
+    cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_ituzone ON qso_log(ituzone);')
+    cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_cqzone ON qso_log(cqzone);')
+    cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_prefix ON qso_log(prefix);')
+    cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_grid ON qso_log(grid);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_qso_id ON qso_log(qso_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_qso_timestamp ON qso_log(timestamp);')
+    cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_duplicate ON qso_log(duplicate);')
+    cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_own_effort ON qso_log(own_effort);')
 
     cursor.execute('CREATE TABLE IF NOT EXISTS radio_info\n'
                    '    (station_name CHAR(32) NOT NULL,\n'
@@ -237,7 +284,8 @@ def get_radio_info(cursor):
 def record_contact_combined(db, cursor, operators, stations,
                             timestamp, mycall, band, mode, operator, station,
                             rx_freq, tx_freq, callsign, rst_sent, rst_recv,
-                            exchange, section, comment, qso_id, state=''):
+                            exchange, section, comment, qso_id, state='',
+                            ituzone='', cqzone='', prefix='', grid=''):
     """
     record the results of a contact_message
     """
@@ -265,10 +313,11 @@ def record_contact_combined(db, cursor, operators, stations,
         cursor.execute(
             'insert or replace into qso_log \n'
             '    (timestamp, mycall, band_id, mode_id, operator_id, station_id , rx_freq, tx_freq, \n'
-            '     callsign, rst_sent, rst_recv, exchange, section, state, comment, qso_id)\n'
-            '    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
+            '     callsign, rst_sent, rst_recv, exchange, section, state, ituzone, cqzone, prefix, grid, comment, qso_id)\n'
+            '    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
             (calendar.timegm(timestamp), mycall, band_id, mode_id, operator_id, station_id, rx_freq, tx_freq,
-             callsign, rst_sent, rst_recv, exchange, section, state, comment, str(qso_id)))
+             callsign, rst_sent, rst_recv, exchange, section, state,
+             ituzone or None, cqzone or None, prefix, grid, comment, str(qso_id)))
 
         db.commit()
     except Exception as err:
@@ -392,6 +441,27 @@ def delete_contact_by_qso_id(db, cursor, qso_id):
         return ''
 
 
+def _exclude_clause(cursor, prefix=' WHERE '):
+    """SQL fragment that excludes non-scoring QSOs from a qso_log query: Field
+    Day duplicates (`duplicate = 1`) and own-effort contacts where we worked one
+    of our own operators (`own_effort = 1`).
+
+    Older archives (read by one_chart.py and generate_comparison_charts.py) may
+    have neither column, so a hard `WHERE duplicate = 0` would raise "no such
+    column". This checks which columns exist once per call and includes only
+    those, degrading to a no-op clause when none are present.
+
+    prefix is ' WHERE ' for a query with no existing WHERE, or ' AND ' to append
+    to one that already has a WHERE.
+    """
+    cursor.execute('PRAGMA table_info(qso_log);')
+    cols = {col[1] for col in cursor.fetchall()}
+    conds = [c + ' = 0' for c in ('duplicate', 'own_effort') if c in cols]
+    if not conds:
+        return ''
+    return prefix + ' AND '.join(conds)
+
+
 def get_last_qso(cursor):
     cursor.execute('SELECT timestamp, callsign, exchange, section, operator.name, band_id \n'
                    'FROM qso_log JOIN operator WHERE operator.id = operator_id \n'
@@ -415,7 +485,7 @@ def get_qso_count(cursor):
     misses -- chiefly a contactdelete that removes a QSO other than the newest,
     which leaves MAX(timestamp) unchanged but lowers the count.
     """
-    cursor.execute('SELECT COUNT(*) FROM qso_log')
+    cursor.execute('SELECT COUNT(*) FROM qso_log' + _exclude_clause(cursor))
     row = cursor.fetchone()
     return row[0] if row else 0
 
@@ -425,6 +495,7 @@ def get_operators_by_qsos(cursor):
     qso_operators = []
     cursor.execute('SELECT name, COUNT(operator_id) AS qso_count \n'
                    'FROM qso_log JOIN operator ON operator.id = operator_id \n'
+                   + _exclude_clause(cursor) + '\n'
                    'GROUP BY operator_id ORDER BY qso_count DESC;')
     for row in cursor:
         qso_operators.append((row[0], row[1]))
@@ -435,7 +506,9 @@ def get_station_qsos(cursor):
     logging.debug('Load QSOs by Station')
     qso_stations = []
     cursor.execute('SELECT name, COUNT(station_id) AS qso_count \n'
-                   'FROM qso_log JOIN station ON station.id = station_id GROUP BY station_id;')
+                   'FROM qso_log JOIN station ON station.id = station_id'
+                   + _exclude_clause(cursor) +
+                   ' GROUP BY station_id;')
     for row in cursor:
         qso_stations.append((row[0], row[1]))
     return qso_stations
@@ -449,7 +522,8 @@ def get_qsos_per_hour_per_operator(cursor, last_qso_time):
 
     cursor.execute('SELECT operator.name, COUNT(operator_id) qso_count FROM qso_log\n'
                    'JOIN operator ON operator.id = operator_id\n'
-                   'WHERE timestamp >= ? AND timestamp <= ?\n'
+                   'WHERE timestamp >= ? AND timestamp <= ?'
+                   + _exclude_clause(cursor, ' AND ') + '\n'
                    'GROUP BY operator_id ORDER BY qso_count DESC LIMIT 10;', (start_time, last_qso_time))
     operator_qso_rates = [['Operator', 'Rate']]
     total = 0
@@ -464,7 +538,9 @@ def get_qsos_per_hour_per_operator(cursor, last_qso_time):
 def get_qso_band_modes(cursor):
     qso_band_modes = [[0] * 4 for _ in constants.Bands.BANDS_LIST]
 
-    cursor.execute('SELECT COUNT(*), band_id, mode_id FROM qso_log GROUP BY band_id, mode_id;')
+    cursor.execute('SELECT COUNT(*), band_id, mode_id FROM qso_log'
+                   + _exclude_clause(cursor) +
+                   ' GROUP BY band_id, mode_id;')
     for row in cursor:
         qso_band_modes[row[1]][constants.Modes.MODE_TO_SIMPLE_MODE[row[2]]] += row[0]
     return qso_band_modes
@@ -475,7 +551,7 @@ def get_qso_classes(cursor):
     # "2A", "3F") rather than the full "class section" string -- otherwise
     # every class+section combo (e.g. "2A OH" vs "2A NNJ") fragments into its
     # own slice and the chart degrades as more sections are worked.
-    cursor.execute('SELECT exchange FROM qso_log;')
+    cursor.execute('SELECT exchange FROM qso_log' + _exclude_clause(cursor) + ';')
     counts = {}
     for (exchange,) in cursor:
         cls = ''
@@ -491,7 +567,7 @@ def get_qso_classes(cursor):
 
 
 def get_qso_categories(cursor):
-    cursor.execute("SELECT exchange FROM qso_log;")
+    cursor.execute('SELECT exchange FROM qso_log' + _exclude_clause(cursor) + ';')
     counts = {}
     for (exchange,) in cursor:
         cls = ''
@@ -518,7 +594,8 @@ def get_qsos_per_hour_per_band(cursor):
 
     logging.debug('Load QSOs per Hour by Band')
     cursor.execute('SELECT timestamp / %d * %d AS ts, band_id, COUNT(*) AS qso_count \n'
-                   'FROM qso_log GROUP BY ts, band_id;' % (window_seconds, window_seconds))
+                   'FROM qso_log%s GROUP BY ts, band_id;'
+                   % (window_seconds, window_seconds, _exclude_clause(cursor)))
     for row in cursor:
         if len(qsos_per_hour) == 0:
             qsos_per_hour.append([0] * constants.Bands.count())
@@ -540,7 +617,9 @@ def get_qsos_per_hour_per_band(cursor):
 def get_qsos_by_section(cursor):
     logging.debug('Load QSOs by Section')
     qsos_by_section = {}
-    cursor.execute('SELECT section, COUNT(section) AS qsos FROM qso_log GROUP BY section;')
+    cursor.execute('SELECT section, COUNT(section) AS qsos FROM qso_log'
+                   + _exclude_clause(cursor) +
+                   ' GROUP BY section;')
     for row in cursor:
         qsos_by_section[row[0]] = row[1]
         logging.debug(f'Section {row[0]} {row[1]}')
@@ -550,11 +629,78 @@ def get_qsos_by_section(cursor):
 def get_qsos_by_state(cursor):
     logging.debug('Load QSOs by State')
     qsos_by_state = {}
-    cursor.execute('SELECT state, COUNT(state) AS qsos FROM qso_log WHERE state != \'\' GROUP BY state;')
+    cursor.execute('SELECT state, COUNT(state) AS qsos FROM qso_log WHERE state != \'\''
+                   + _exclude_clause(cursor, ' AND ') +
+                   ' GROUP BY state;')
     for row in cursor:
         qsos_by_state[row[0]] = row[1]
         logging.debug(f'State {row[0]} {row[1]}')
     return qsos_by_state
+
+
+def _get_qsos_by_zone(cursor, column):
+    """QSO counts keyed by zone number as a string (e.g. '8'), to match the zone
+    ids in the zones geojson and the zone multiplier dict. `column` is the zone
+    column to group on ('ituzone' or 'cqzone')."""
+    logging.debug('Load QSOs by %s', column)
+    qsos_by_zone = {}
+    cursor.execute('SELECT %s, COUNT(%s) AS qsos FROM qso_log'
+                   ' WHERE %s IS NOT NULL' % (column, column, column)
+                   + _exclude_clause(cursor, ' AND ') +
+                   ' GROUP BY %s;' % column)
+    for row in cursor:
+        # zone columns have INTEGER affinity so SQLite hands back an int; the map
+        # keys on strings, so normalise here.
+        qsos_by_zone[str(row[0])] = row[1]
+        logging.debug(f'{column} {row[0]} {row[1]}')
+    return qsos_by_zone
+
+
+def get_qsos_by_ituzone(cursor):
+    """QSO counts keyed by ITU zone (shapes/itu_zones.geojson, ITU_ZONES)."""
+    return _get_qsos_by_zone(cursor, 'ituzone')
+
+
+def get_qsos_by_cqzone(cursor):
+    """QSO counts keyed by CQ zone (shapes/cq_zones.geojson, CQ_ZONES)."""
+    return _get_qsos_by_zone(cursor, 'cqzone')
+
+
+def get_qsos_by_grid(cursor):
+    """QSO counts keyed by Maidenhead grid (e.g. 'FN31'). The map computes each
+    worked grid's cell box from the identifier, so there is no fixed geometry
+    file or multiplier dictionary -- only worked grids are returned."""
+    logging.debug('Load QSOs by grid')
+    qsos_by_grid = {}
+    cursor.execute("SELECT grid, COUNT(grid) AS qsos FROM qso_log"
+                   " WHERE grid IS NOT NULL AND grid != ''"
+                   + _exclude_clause(cursor, ' AND ') +
+                   ' GROUP BY grid;')
+    for row in cursor:
+        qsos_by_grid[row[0]] = row[1]
+        logging.debug(f'grid {row[0]} {row[1]}')
+    return qsos_by_grid
+
+
+def get_qsos_by_hq(cursor):
+    """QSO counts keyed by IARU HQ-station abbreviation (e.g. 'ARRL', 'DARC').
+    HQ stations log their society abbreviation in the section field; regular
+    zone QSOs leave it empty or numeric. Every distinct section value is grouped
+    then filtered to the recognised HQ set (constants.hq_canonical), folding
+    aliases into their canonical abbreviation. Values that are not HQ stations
+    (plain ITU zone numbers, blanks) are dropped."""
+    logging.debug('Load QSOs by HQ station')
+    qsos_by_hq = {}
+    cursor.execute("SELECT section, COUNT(section) AS qsos FROM qso_log"
+                   " WHERE section IS NOT NULL AND section != ''"
+                   + _exclude_clause(cursor, ' AND ') +
+                   ' GROUP BY section;')
+    for row in cursor:
+        abbr = constants.hq_canonical(row[0])
+        if abbr:
+            qsos_by_hq[abbr] = qsos_by_hq.get(abbr, 0) + row[1]
+            logging.debug(f'hq {row[0]} -> {abbr} {row[1]}')
+    return qsos_by_hq
 
 
 def get_operator_first_qsos(cursor):

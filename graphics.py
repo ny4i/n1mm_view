@@ -2,6 +2,7 @@
 #
 #
 import calendar
+import json
 import logging
 import os
 import datetime
@@ -41,10 +42,11 @@ WHITE = pygame.Color('#ffffff')
 GRAY = pygame.Color('#cccccc')
 DARK_GRAY = pygame.Color('#666666')
 
-# Map colors (used with matplotlib, not pygame)
-MAP_OCEAN_COLOR = '#000080'
-MAP_LAKE_COLOR = '#000080'
-MAP_LAND_COLOR = '#113311'
+# Map colors (used with matplotlib, not pygame). Configurable via the [MAP]
+# section of the ini; these are the fallback defaults (see config.py).
+MAP_OCEAN_COLOR = config.MAP_OCEAN_COLOR
+MAP_LAKE_COLOR = config.MAP_LAKE_COLOR
+MAP_LAND_COLOR = config.MAP_LAND_COLOR
 
 # Radio strip font sizes
 STRIP_FREQ_FONT_SIZE = 96
@@ -149,12 +151,75 @@ def make_blank_chart(size, title, message='— no data yet —'):
     return raw_data, surf.get_size()
 
 
+# A pie with more than this many slices crowds its small wedges into an
+# unreadable pile of overlapping labels; above it, make_pie() renders a sorted
+# horizontal bar chart instead (readable at any count / data range).
+MAX_PIE_SLICES = 9
+
+
+def make_barh(size, values, labels, title):
+    """
+    Sorted horizontal bar chart, used in place of a pie when there are too many
+    categories (see MAX_PIE_SLICES). Bars run largest-first, top to bottom, each
+    annotated with its count. Same dark theme and return shape as make_pie.
+    """
+    logging.debug('make_barh(...,...,%s)', title)
+    pairs = sorted(zip(values, labels), key=lambda p: p[0], reverse=True)
+    values = [p[0] for p in pairs]
+    labels = [p[1] for p in pairs]
+
+    width_inches = size[0] / 100.0
+    height_inches = size[1] / 100.0
+    fig = plt.figure(figsize=(width_inches, height_inches), dpi=100,
+                     tight_layout={'pad': 1.0}, facecolor='k')
+    ax = fig.add_subplot(111)
+    ax.set_facecolor('k')
+
+    n = len(values)
+    palette = list(mcolors.TABLEAU_COLORS.values())
+    colors = [palette[i % len(palette)] for i in range(n)]
+    # Scale label size to the number of bars so 30+ rows still fit.
+    fontsize = max(7, min(16, int(560 / n)))
+
+    y = list(range(n))
+    bars = ax.barh(y, values, color=colors, edgecolor='k', linewidth=0.25)
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, color='w', fontsize=fontsize)
+    ax.invert_yaxis()  # largest bar on top
+    ax.bar_label(bars, labels=[str(v) for v in values],
+                 padding=3, color='w', fontsize=fontsize)
+
+    ax.set_title(title, color='white', size=48, weight='bold')
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.get_xaxis().set_visible(False)
+    ax.set_xlim(0, max(values) * 1.12)  # headroom so the count labels don't clip
+
+    canvas = agg.FigureCanvasAgg(fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    canvas_size = canvas.get_width_height()
+    if image_format == 'ARGB':
+        raw_data = renderer.tostring_argb()
+    else:
+        raw_data = renderer.tostring_rgb()
+
+    plt.close(fig)
+    logging.debug('make_barh(...,...,%s) done', title)
+    return raw_data, canvas_size
+
+
 def make_pie(size, values, labels, title):
     """
     make a pie chart using matplotlib.
     return the chart as a pygame surface
     make the pie chart a square that is as tall as the display.
+
+    Falls back to a horizontal bar chart when there are too many categories for
+    a pie to stay legible (see MAX_PIE_SLICES).
     """
+    if len(values) > MAX_PIE_SLICES:
+        return make_barh(size, values, labels, title)
     logging.debug('make_pie(...,...,%s)', title)
     new_labels = []
     for i in range(0, len(labels)):
@@ -168,15 +233,10 @@ def make_pie(size, values, labels, title):
            wedgeprops={'linewidth': 0.25}, colors=mcolors.TABLEAU_COLORS)
     ax.set_title(title, color='white', size=48, weight='bold')
 
-    handles, labels = ax.get_legend_handles_labels()
-    # legend = ax.legend(handles[0:5], labels[0:5], title='Top %s' % title, loc='upper right', prop={'size': 14})
-    legend = ax.legend(handles[0:5], labels[0:5], loc='upper right', prop={'size': 14})  # best
-    frame = legend.get_frame()
-    frame.set_color((0, 0, 0, 0.75))
-    frame.set_edgecolor('w')
-    legend.get_title().set_color('w')
-    for text in legend.get_texts():
-        plt.setp(text, color='w')
+    # No legend: each slice is already labelled with its name and count around
+    # the pie, so a top-5 legend was redundant and collided with the slice
+    # labels in the upper-right corner. High-cardinality data goes to make_barh
+    # (see MAX_PIE_SLICES), so pies here always have few, well-spaced labels.
 
     canvas = agg.FigureCanvasAgg(fig)
     canvas.draw()
@@ -295,16 +355,11 @@ def qso_operators_table_all(size, qso_operators):
     if len(qso_operators) == 0:
         return None, (0, 0)
 
-    count = 0
-    cells = [['Operator', 'QSOs']]
-    for d in qso_operators:
-        cells.append(['%s' % d[0], '%5d' % d[1]])
-        count += 1
-
-    if count == 0:
-        return None, (0, 0)
-    else:
-        return draw_table(size, cells, "QSOs by All Operators", bigger_font)
+    data_rows = [['%s' % d[0], '%5d' % d[1]] for d in qso_operators]
+    header, rows, label_cols = maybe_two_up(['Operator', 'QSOs'], data_rows, {1})
+    cells = [header] + rows
+    return draw_table(size, cells, "QSOs by All Operators", bigger_font,
+                      label_cols=label_cols)
 
 
 def qso_stations_graph(size, qso_stations):
@@ -514,15 +569,53 @@ def qso_rates_graph(size, qsos_per_hour):
     return raw_data, canvas_size
 
 
-def draw_table(size, cell_text, title, font=None):
+# A single-column table taller than this many data rows is laid out in two
+# side-by-side groups (e.g. the all-operators / leaderboard tables) so it does
+# not run off the bottom of the display.
+TABLE_TWO_UP_MIN = 17
+
+
+def maybe_two_up(header, data_rows, label_cols):
+    """Optionally lay a long table out in two side-by-side groups.
+
+    header: list of column titles for ONE group.
+    data_rows: list of rows (each a list matching header) for ONE group.
+    label_cols: 1-based label columns within ONE group (rendered white).
+
+    Returns (header, rows, label_cols) ready for draw_table: unchanged when the
+    table is short, or doubled-width (left group = first half, right group =
+    second half, shorter side blank-padded) when it exceeds TABLE_TWO_UP_MIN.
+    """
+    if len(data_rows) <= TABLE_TWO_UP_MIN:
+        return list(header), data_rows, set(label_cols)
+    ncol = len(header)
+    half = (len(data_rows) + 1) // 2
+    blank = [''] * ncol
+    rows = []
+    for i in range(half):
+        right = data_rows[half + i] if half + i < len(data_rows) else blank
+        rows.append(list(data_rows[i]) + list(right))
+    new_header = list(header) + list(header)
+    new_label_cols = set(label_cols) | {c + ncol for c in label_cols}
+    return new_header, rows, new_label_cols
+
+
+def draw_table(size, cell_text, title, font=None, label_cols=None):
     """
     draw a table
+
+    label_cols: 1-based column numbers rendered in the header (white) colour
+    rather than the gray data colour. Defaults to {1} (the first column), the
+    historical behaviour. Multi-up tables (e.g. two Operator|QSOs pairs side by
+    side) pass the column number of each label column, e.g. {1, 3}.
     """
     logging.debug('draw_table(...,%s)', title)
     if font is None:
         table_font = view_font
     else:
         table_font = font
+    if label_cols is None:
+        label_cols = {1}
 
     text_y_offset = 4
     text_x_offset = 4
@@ -600,7 +693,7 @@ def draw_table(size, cell_text, title, font=None):
         for col in row:
             x += col_widths[column_number]
             column_number += 1
-            if row_number == 1 or column_number == 1:
+            if row_number == 1 or column_number in label_cols:
                 text = table_font.render(col, True, head_color)
             else:
                 text = table_font.render(col, True, text_color)
@@ -869,6 +962,13 @@ def draw_radio_info(size, radios):
     return raw_data, result_size
 
 
+def _mult_sort_key(code):
+    """Sort key for multiplier codes: numeric multipliers (ITU/CQ zones) sort
+    numerically (so 9 comes before 89/90, not between them), while alphabetic
+    multipliers (sections, states) keep their normal alphabetical order."""
+    return (0, int(code)) if code.isdigit() else (1, code)
+
+
 def draw_mults_progress(size, qsos_by_mult):
     """
     Draw a multiplier progress display with progress bar and percentage.
@@ -890,7 +990,7 @@ def draw_mults_progress(size, qsos_by_mult):
         return None, (0, 0)
 
     percentage = (worked_mults / total_mults) * 100
-    mult_type = 'States' if config.MULTS == 'STATES' else 'Sections'
+    mult_type = get_mult_name()
 
     # Get actual font heights for proper spacing
     title_font = bigger_font
@@ -898,8 +998,10 @@ def draw_mults_progress(size, qsos_by_mult):
     main_font = view_font
     main_height = main_font.get_height()
 
-    # Calculate text content first to determine width needed
-    title = f'{mult_type} Progress'
+    # Calculate text content first to determine width needed. Title is generic
+    # ('Multiplier Progress') so it reads sensibly for any contest; the body
+    # still names the specific multiplier (sections/states/zones).
+    title = 'Multiplier Progress'
     main_text = f'{worked_mults}/{total_mults} {mult_type.lower()} worked ({percentage:.0f}%)'
     remaining = total_mults - worked_mults
     remaining_text = f'{remaining} remaining'
@@ -999,8 +1101,10 @@ def draw_mults_remaining(size, qsos_by_mult):
     if qsos_by_mult is None:
         qsos_by_mult = {}
 
-    # Get all mults sorted, track which are worked
-    all_mults = sorted(mult_dict.keys())
+    # Get all mults sorted, track which are worked. Numeric multipliers (ITU/CQ
+    # zones) sort numerically so 9 doesn't land between 89 and 90; alpha
+    # multipliers (sections, states) keep their normal alphabetical order.
+    all_mults = sorted(mult_dict.keys(), key=_mult_sort_key)
     worked_set = {code for code in all_mults if qsos_by_mult.get(code, 0) > 0}
     num_worked = len(worked_set)
     num_remaining = len(all_mults) - num_worked
@@ -1012,7 +1116,7 @@ def draw_mults_remaining(size, qsos_by_mult):
     cell_height = cell_font.get_height() + 8
     padding = 20
 
-    mult_type = 'States' if config.MULTS == 'STATES' else 'Sections'
+    mult_type = get_mult_name()
 
     if num_remaining == 0:
         # All mults worked - show congratulations
@@ -1100,6 +1204,126 @@ def draw_mults_remaining(size, qsos_by_mult):
     return raw_data, result_size
 
 
+def draw_hq_stations(size, qsos_by_hq):
+    """
+    Draw the IARU HQ-station multiplier chart: a worked/total header with a
+    progress bar, over a grid of the full HQ-society roster with worked
+    abbreviations highlighted (bright green) and unworked ones dimmed.
+
+    HQ stations are a secondary IARU multiplier that coexists with the ITU-zone
+    map, so this is its own slide rather than part of the zone charts. Unlike
+    the zone "remaining" chart there is no realistic goal of working every
+    society, so worked ones are highlighted (celebrating what's in the log)
+    rather than dimmed.
+
+    Returns (raw_data, size) or (None, (0,0)) if there is no HQ roster.
+    """
+    logging.debug('draw_hq_stations()')
+
+    all_hq = sorted(IARU_HQ)
+    total_hq = len(all_hq)
+    if total_hq == 0:
+        return None, (0, 0)
+
+    if qsos_by_hq is None:
+        qsos_by_hq = {}
+
+    worked_set = {abbr for abbr in all_hq if qsos_by_hq.get(abbr, 0) > 0}
+    num_worked = len(worked_set)
+    percentage = (num_worked / total_hq) * 100
+
+    padding = 20
+
+    title_font = bigger_font
+    title = 'HQ Stations Worked'
+    title_height = title_font.get_height()
+
+    sub_font = view_font
+    sub_text = f'{num_worked}/{total_hq} HQ worked ({percentage:.0f}%)'
+    sub_height = sub_font.get_height()
+
+    cell_font = view_font
+    cell_height = cell_font.get_height() + 8
+
+    # HQ abbreviations are short, so pack more columns than the zone grid to keep
+    # the ~180-entry roster from getting excessively tall.
+    max_code_width = max(cell_font.size(code)[0] for code in all_hq)
+    cell_width = max_code_width + 30
+    num_cols = 8
+    num_rows = (total_hq + num_cols - 1) // num_cols
+
+    table_width = num_cols * cell_width
+    table_height = num_rows * cell_height
+
+    bar_height = 40
+    min_bar_width = 400
+
+    title_width = title_font.size(title)[0]
+    sub_width = sub_font.size(sub_text)[0]
+    content_width = max(title_width, sub_width, table_width, min_bar_width)
+    surface_width = content_width + padding * 2
+
+    # Vertical layout: title, subtitle, progress bar, then the roster grid.
+    y_cursor = padding
+    title_y = y_cursor
+    y_cursor += title_height + padding
+    sub_y = y_cursor
+    y_cursor += sub_height + padding
+    bar_y = y_cursor
+    y_cursor += bar_height + padding
+    grid_y = y_cursor
+    y_cursor += table_height + padding
+    surface_height = y_cursor
+
+    surf = pygame.Surface((surface_width, surface_height))
+    surf.fill(BLACK)
+
+    # Title
+    title_surf = title_font.render(title, True, WHITE)
+    title_rect = title_surf.get_rect()
+    title_rect.centerx = surface_width // 2
+    title_rect.y = title_y
+    surf.blit(title_surf, title_rect)
+
+    # Subtitle count
+    sub_surf = sub_font.render(sub_text, True, CYAN)
+    sub_rect = sub_surf.get_rect()
+    sub_rect.centerx = surface_width // 2
+    sub_rect.y = sub_y
+    surf.blit(sub_surf, sub_rect)
+
+    # Progress bar (green fill; the bar is a rough "how much of the roster" gauge)
+    bar_margin = 50
+    bar_width = surface_width - 2 * bar_margin
+    bar_bg_rect = pygame.Rect(bar_margin, bar_y, bar_width, bar_height)
+    pygame.draw.rect(surf, GRAY, bar_bg_rect, 3)
+    if num_worked > 0:
+        fill_width = int(bar_width * num_worked / total_hq)
+        if fill_width < 6:
+            fill_width = 6
+        fill_rect = pygame.Rect(bar_margin + 3, bar_y + 3, fill_width - 6, bar_height - 6)
+        pygame.draw.rect(surf, GREEN, fill_rect)
+
+    # Roster grid: worked = bright green, unworked = dim gray.
+    start_x = (surface_width - table_width) // 2
+    for i, code in enumerate(all_hq):
+        col = i % num_cols
+        row = i // num_cols
+        x = start_x + col * cell_width
+        y = grid_y + row * cell_height
+        color = GREEN if code in worked_set else DARK_GRAY
+        code_surf = cell_font.render(code, True, color)
+        code_rect = code_surf.get_rect()
+        code_rect.centerx = x + cell_width // 2
+        code_rect.y = y
+        surf.blit(code_surf, code_rect)
+
+    result_size = surf.get_size()
+    raw_data = pygame.image.tostring(surf, image_format)
+    logging.debug('draw_hq_stations() done')
+    return raw_data, result_size
+
+
 def draw_operator_leaderboard(size, qso_operators):
     """
     Draw a ranked operator leaderboard table.
@@ -1117,20 +1341,22 @@ def draw_operator_leaderboard(size, qso_operators):
         return None, (0, 0)
 
     # Build table data
-    cells = [['Rank', 'Operator', 'QSOs', '%']]
-
     ordinals = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th',
                 '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th']
 
+    data_rows = []
     for i, (name, count) in enumerate(qso_operators):
         rank = ordinals[i] if i < len(ordinals) else f'{i+1}th'
         pct = (count / total_qsos) * 100
-        cells.append([rank, name, f'{count}', f'{pct:.1f}%'])
+        data_rows.append([rank, name, f'{count}', f'{pct:.1f}%'])
 
+    header, rows, label_cols = maybe_two_up(['Rank', 'Operator', 'QSOs', '%'],
+                                            data_rows, {1})
+    cells = [header] + rows
     title = 'Operator Leaderboard'
 
     logging.debug('draw_operator_leaderboard() done')
-    return draw_table(size, cells, title)
+    return draw_table(size, cells, title, label_cols=label_cols)
 
 
 def draw_new_ops_race(size, current_first_qsos, prior_op_names, prior_curve,
@@ -1266,6 +1492,17 @@ def draw_new_ops_race(size, current_first_qsos, prior_op_names, prior_curve,
     canvas = agg.FigureCanvasAgg(fig)
     canvas.draw()
     renderer = canvas.get_renderer()
+
+    # Shrink the title if it overflows the figure width. The title size is fixed
+    # at 42, but a long prior-event label (e.g. "2025 ARRL FD") can push it past
+    # both edges, so measure the rendered width and scale down to fit if needed.
+    fig_px = fig.get_figwidth() * fig.get_dpi()
+    title_bb = ax.title.get_window_extent(renderer)
+    if title_bb.width > fig_px * 0.98:
+        ax.title.set_fontsize(ax.title.get_fontsize() * fig_px * 0.98 / title_bb.width)
+        canvas.draw()
+        renderer = canvas.get_renderer()
+
     raw_data = renderer.tostring_argb() if image_format == 'ARGB' else renderer.tostring_rgb()
     plt.close(fig)
     return raw_data, canvas.get_width_height()
@@ -1376,23 +1613,115 @@ def draw_new_ops_roster(size, current_first_qsos, prior_op_names,
     return draw_table(size, cells, 'New Operators — %s' % event_label)
 
 
+# Map extent [lon_min, lon_max, lat_min, lat_max] and coastline resolution per
+# multiplier mode. Section/State contests are North-America regional; the IARU
+# HF Championship is worked worldwide against ITU zones, so it needs the whole
+# globe (and a coarser coastline, which is plenty at world scale and faster).
+# Zone-multiplier map views share one world extent. '50m' coastline is used
+# (not '110m') because it is already cached offline from the section map; the FD
+# site has no internet to fetch datasets.
+_WORLD_VIEW = {'extent': [-180, 180, -85, 85], 'coastline': '50m',
+               'extent_crs': ccrs.PlateCarree()}
+MAP_VIEWS = {
+    'ITUZONES': _WORLD_VIEW,
+    'CQZONES':  _WORLD_VIEW,
+    # GRID starts from the world view but draw_map auto-fits the extent to the
+    # worked grids (grid contests are usually regional).
+    'GRID':     _WORLD_VIEW,
+    'DEFAULT':  {'extent': [-168, -52, 10, 60], 'coastline': '50m',
+                 'extent_crs': ccrs.Geodetic()},
+}
+
+
+def grid_to_bbox(grid):
+    """Convert a Maidenhead locator to its cell box (lon_min, lat_min, lon_max,
+    lat_max), or None if invalid. Precision is taken from the locator length:
+    2 chars = field (20x10 deg), 4 = square (2x1 deg), 6 = subsquare (5'x2.5').
+    """
+    if not grid:
+        return None
+    g = grid.strip().upper()
+    if len(g) not in (2, 4, 6):
+        return None
+    if not ('A' <= g[0] <= 'R' and 'A' <= g[1] <= 'R'):
+        return None
+    lon = -180.0 + (ord(g[0]) - ord('A')) * 20.0
+    lat = -90.0 + (ord(g[1]) - ord('A')) * 10.0
+    lon_size, lat_size = 20.0, 10.0
+    if len(g) >= 4:
+        if not (g[2].isdigit() and g[3].isdigit()):
+            return None
+        lon += int(g[2]) * 2.0
+        lat += int(g[3]) * 1.0
+        lon_size, lat_size = 2.0, 1.0
+    if len(g) >= 6:
+        if not ('A' <= g[4] <= 'X' and 'A' <= g[5] <= 'X'):
+            return None
+        lon += (ord(g[4]) - ord('A')) * (2.0 / 24.0)
+        lat += (ord(g[5]) - ord('A')) * (1.0 / 24.0)
+        lon_size, lat_size = 2.0 / 24.0, 1.0 / 24.0
+    return (lon, lat, lon + lon_size, lat + lat_size)
+
+# Per-mode zone fill-polygon geojson, built by extract_zones.py from the
+# Leaflet.ITUzones / Leaflet.CQzones boundary data.
+ZONE_GEOJSON = {
+    'ITUZONES': 'shapes/itu_zones.geojson',
+    'CQZONES':  'shapes/cq_zones.geojson',
+}
+
+_zone_geometry_cache = {}
+
+
+def _load_zone_geometries(path):
+    """Load and cache the zone fill polygons from a zones geojson.
+
+    Returns {zone_number_str: shapely geometry}. Returns {} (with a warning) if
+    the file is missing so the map still renders.
+    """
+    if path in _zone_geometry_cache:
+        return _zone_geometry_cache[path]
+    from shapely.geometry import shape
+    geometries = {}
+    if not os.path.exists(path):
+        logging.warning('zone geometry not found: %s (run extract_zones.py)' % path)
+    else:
+        with open(path) as fh:
+            fc = json.load(fh)
+        for feature in fc.get('features', []):
+            zone = str(feature.get('properties', {}).get('zone', '')).strip()
+            if zone:
+                geometries[zone] = shape(feature['geometry'])
+    _zone_geometry_cache[path] = geometries
+    return geometries
+
+
 def draw_map(size, qsos_by_section):
     """
-    make the choropleth with Cartopy & section shapefiles
+    make the choropleth with Cartopy: ARRL section/US-state shapefiles for
+    regional contests, ITU/CQ zone polygons on a world map for the zone modes,
+    or computed Maidenhead grid cells (auto-fit extent) when MULTS=GRID
     """
     logging.debug('draw_section map()')
     width_inches = size[0] / 100.0
     height_inches = size[1] / 100.0
     fig = plt.Figure(figsize=(width_inches, height_inches), dpi=100, facecolor='black')
 
+    view = MAP_VIEWS.get(config.MULTS, MAP_VIEWS['DEFAULT'])
+    zone_geometries = _load_zone_geometries(ZONE_GEOJSON[config.MULTS]) \
+        if config.MULTS in ZONE_GEOJSON else None
+
     projection = ccrs.PlateCarree()
     ax = fig.add_axes([0, 0, 1, 1], projection=projection)
-    ax.set_extent([-168, -52, 10, 60], ccrs.Geodetic())
-    ax.add_feature(cfeature.OCEAN, color=MAP_OCEAN_COLOR)
-    ax.add_feature(cfeature.LAKES, color=MAP_LAKE_COLOR)
-    ax.add_feature(cfeature.LAND, color=MAP_LAND_COLOR)
+    ax.set_extent(view['extent'], view['extent_crs'])
+    # Pin physical fills to 110m: these features default to scale='auto', which
+    # switches to 50m/10m when the extent is zoomed in (e.g. a regional GRID
+    # auto-fit) and tries to DOWNLOAD those datasets -- fatal at the offline FD
+    # site. Only the 110m physical set and 50m coastline are cached locally.
+    ax.add_feature(cfeature.OCEAN.with_scale('110m'), color=MAP_OCEAN_COLOR)
+    ax.add_feature(cfeature.LAKES.with_scale('110m'), color=MAP_LAKE_COLOR)
+    ax.add_feature(cfeature.LAND.with_scale('110m'), color=MAP_LAND_COLOR)
 
-    ax.coastlines('50m')
+    ax.coastlines(view['coastline'])
     ax.annotate(get_mult_title(), xy=(0.5, 1), xycoords='axes fraction', ha='center', va='top',
                 color='white', size=48, weight='bold')
     
@@ -1404,6 +1733,43 @@ def draw_map(size, qsos_by_section):
     delta = 1 / (num_colors + 1)
     colors = [delta * i for i in range(num_colors+1)]
     color_palette = matplotlib.cm.viridis(colors)
+
+    def color_index_for(qsos):
+        idx = 0
+        for range_max in ranges:
+            if range_max == -1 or qsos <= range_max:
+                break
+            idx += 1
+            if idx == num_colors:
+                break
+        return idx
+
+    if config.MULTS == 'GRID':
+        # Maidenhead grids: no fixed geometry file -- compute each worked grid's
+        # cell box from its identifier and fill it. Only worked grids exist in
+        # qsos_by_section, so every cell is coloured (no black placeholders), and
+        # the map auto-fits to the worked area (grid contests are regional).
+        from shapely.geometry import box as shp_box
+        bounds = None  # [lon_min, lat_min, lon_max, lat_max] across worked grids
+        for grid_name, qsos in qsos_by_section.items():
+            bbox = grid_to_bbox(grid_name)
+            if bbox is None:
+                logging.warning('unparseable grid %r, skipping', grid_name)
+                continue
+            ci = color_index_for(qsos) or 1  # worked -> at least the first colour
+            ax.add_geometries([shp_box(*bbox)], projection, linewidth=0.5,
+                              edgecolor='w', facecolor=color_palette[ci])
+            if bounds is None:
+                bounds = list(bbox)
+            else:
+                bounds = [min(bounds[0], bbox[0]), min(bounds[1], bbox[1]),
+                          max(bounds[2], bbox[2]), max(bounds[3], bbox[3])]
+        if bounds is not None:
+            pad_lon = max(5.0, (bounds[2] - bounds[0]) * 0.15)
+            pad_lat = max(5.0, (bounds[3] - bounds[1]) * 0.15)
+            ax.set_extent([max(-180, bounds[0] - pad_lon), min(180, bounds[2] + pad_lon),
+                           max(-90, bounds[1] - pad_lat), min(90, bounds[3] + pad_lat)],
+                          ccrs.PlateCarree())
 
     mult_dict = get_mult_dictionary()
     for section_name in mult_dict.keys():
@@ -1419,6 +1785,22 @@ def draw_map(size, qsos_by_section):
             if color_index == num_colors:
                 break
 
+        section_color = 'k' if color_index == 0 else color_palette[color_index]
+
+        if zone_geometries is not None:
+            # ITU zones: fill polygons come from the shared GeoJSON, one
+            # (Multi)Polygon per zone number, rather than a file per key.
+            geometry = zone_geometries.get(section_name)
+            if geometry is None:
+                logging.warning('ITU zone geometry missing: %s, skipping' % section_name)
+                continue
+            # Zones tile the whole globe, so filling unworked zones solid black
+            # would hide every continent. Leave them transparent instead, so the
+            # base map shows through and only worked zones are coloured.
+            zone_face = 'none' if color_index == 0 else section_color
+            ax.add_geometries([geometry], projection, linewidth=0.7, edgecolor="w", facecolor=zone_face)
+            continue
+
         shape_file_name = 'shapes/{}.shp'.format(section_name)
         if not os.path.exists(shape_file_name):
             logging.warning('Shapefile not found: %s, skipping' % shape_file_name)
@@ -1430,12 +1812,13 @@ def draw_map(size, qsos_by_section):
             if shape is None:
                 break
             shape.attributes['name'] = section_name
-            section_color = 'k' if color_index == 0 else color_palette[color_index]
             ax.add_geometries([shape.geometry], projection, linewidth=0.7, edgecolor="w", facecolor=section_color)
 
-    # show terminator
+    # show terminator (day/night shading). Opacity is configurable so the night
+    # side can be lightened -- alpha=0.5 washed the map out very dark.
     date = datetime.datetime.utcnow()  # this might have some timezone problems?
-    ax.add_feature(nightshade.Nightshade(date, alpha=0.5))
+    if config.MAP_TERMINATOR_ALPHA > 0:
+        ax.add_feature(nightshade.Nightshade(date, alpha=config.MAP_TERMINATOR_ALPHA))
 
     # show QTH marker
     ax.plot(config.QTH_LONGITUDE, config.QTH_LATITUDE, '.', color='r')

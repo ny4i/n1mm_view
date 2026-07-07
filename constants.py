@@ -293,17 +293,95 @@ US_STATES = {
 }
 
 
+# Radio zones partition the globe and are used as the multiplier in zone
+# contests: ITU zones 1..90 (IARU HF Championship) and CQ zones 1..40 (CQ WW,
+# CQ WPX-by-zone, etc.). Geometry lives in shapes/itu_zones.geojson and
+# shapes/cq_zones.geojson (see extract_zones.py). Keys are zone numbers as
+# strings so they match the 'zone' property in the GeoJSON and the value logged
+# in the QSO record.
+ITU_ZONES = {str(n): 'Zone %d' % n for n in range(1, 91)}
+CQ_ZONES = {str(n): 'Zone %d' % n for n in range(1, 41)}
+
+
+# IARU HF Championship HQ-station multiplier. National-society headquarters
+# stations and IARU officials send a society abbreviation (e.g. ARRL, DARC,
+# IARU, R1) in the section/exchange field instead of an ITU zone; each distinct
+# abbreviation is a separate multiplier worked alongside the zones. The
+# canonical list is the scored value column of TR4W's iaruhq.dom. There is no
+# meaningful "complete the set" total -- nobody works all ~170 societies -- but
+# the chart still shows the full roster with the worked ones highlighted.
+IARU_HQ = [
+    'AARA', 'AARC', 'AARS', 'ABARS', 'AC', 'AFVL', 'AGRA', 'ARA', 'ARAB',
+    'ARABH', 'ARAC', 'ARAD', 'ARAI', 'ARANC', 'ARAT', 'ARBF', 'ARCOT',
+    'ARGUI', 'ARI', 'ARM', 'ARRAM', 'ARRL', 'ARRSM', 'ARSB', 'ARSI', 'ARSK',
+    'ARTJ', 'ARUKR', 'ASTRA', 'BARC', 'BARL', 'BARS', 'BDARA', 'BFRA', 'BFRR',
+    'BVIRL', 'CARS', 'CORA', 'CRAC', 'CRAG', 'CRAM', 'CRAS', 'CRC', 'CREN',
+    'CRSA', 'CTARL', 'DARC', 'DARCI', 'EARA', 'EARS', 'EDR', 'ERASD', 'ERAU',
+    'FARA', 'FMRE', 'FRA', 'FRC', 'FRR', 'FRRA', 'FRS', 'GARA', 'GARC', 'GARS',
+    'GRC', 'HARTS', 'HRS', 'IRA', 'IARC', 'IARS', 'IARU', 'IRTS', 'JARA',
+    'JARL', 'KARL', 'KARS', 'KFRR', 'LABRE', 'LARS', 'LCRA', 'LPRA', 'LRAA',
+    'LRAL', 'LREM', 'LRMD', 'LRT', 'MARL', 'MARP', 'MARS', 'MARTS', 'MRASZ',
+    'MRSF', 'NARG', 'NARL', 'NARS', 'NRRL', 'NZART', 'OEVSV', 'ORARI', 'OVSV',
+    'PARA', 'PARS', 'PIARA', 'PNGARS', 'PZK', 'QARS', 'R1', 'R2', 'R3', 'RAAG',
+    'RAC', 'RAL', 'RAST', 'RCA', 'RCB', 'RCCH', 'RCCR', 'RCD', 'RCH', 'RCP',
+    'RCU', 'RCV', 'REF', 'REP', 'RJRAS', 'RL', 'ROARS', 'RSB', 'RSGB', 'RSM',
+    'RSS', 'RSSL', 'RSTG', 'RSZ', 'SARA/SZR', 'SARC', 'SARL', 'SARS', 'SARTS',
+    'SARU', 'SCG', 'SHRAK', 'SIRS', 'SLARS', 'SRAL', 'SRR', 'SRS', 'SSA',
+    'SSTARS', 'SVGRS', 'TACARS', 'TARC', 'TARL', 'TRAC', 'TTARS', 'UARL',
+    'UARS', 'UBA', 'URA', 'URE', 'USKA', 'VARC', 'VARS', 'VERON', 'VRAS',
+    'VRONA', 'WIA', 'ZARS', 'ZRS',
+]
+
+# Common forms an operator may log that differ from the canonical abbreviation
+# above (aliases from the left-hand side of iaruhq.dom, plus the split of the
+# combined SARA/SZR entry). Mapped to their canonical value for counting.
+_IARU_HQ_ALIASES = {
+    'IAR': 'IRA',
+    'SARA': 'SARA/SZR',
+    'SZR': 'SARA/SZR',
+}
+
+_IARU_HQ_LOOKUP = {abbr.upper(): abbr for abbr in IARU_HQ}
+_IARU_HQ_LOOKUP.update(_IARU_HQ_ALIASES)
+
+
+def hq_canonical(section):
+    """Map a logged section/exchange value to its canonical IARU HQ abbreviation,
+    or None if it is not a recognised HQ station (e.g. it is a plain ITU zone
+    number). Case-insensitive; accepts a few common aliases."""
+    if not section:
+        return None
+    return _IARU_HQ_LOOKUP.get(section.strip().upper())
+
+
 def get_mult_dictionary():
-    """Return the appropriate multiplier dictionary based on config.MULTS."""
+    """Return the appropriate multiplier dictionary based on config.MULTS.
+
+    GRID (Maidenhead) has no fixed, enumerable multiplier set -- the worked
+    grids are discovered from the log -- so it returns an empty dict; the map
+    iterates the worked grids directly instead of this dictionary."""
     if config.MULTS == 'STATES':
         return US_STATES
+    if config.MULTS == 'ITUZONES':
+        return ITU_ZONES
+    if config.MULTS == 'CQZONES':
+        return CQ_ZONES
+    if config.MULTS == 'GRID':
+        return {}
     return CONTEST_SECTIONS
 
 
 def get_mult_name():
-    """Return the multiplier noun for the configured contest ('States' or
-    'Sections'), for titling charts like '<name> Progress' / '<name> Remaining'."""
-    return 'States' if config.MULTS == 'STATES' else 'Sections'
+    """Return the multiplier noun for the configured contest ('States',
+    'Sections', 'Zones' or 'Grids'), for titling charts like '<name> Progress' /
+    '<name> Remaining'."""
+    if config.MULTS == 'STATES':
+        return 'States'
+    if config.MULTS in ('ITUZONES', 'CQZONES'):
+        return 'Zones'
+    if config.MULTS == 'GRID':
+        return 'Grids'
+    return 'Sections'
 
 
 def get_mult_title():

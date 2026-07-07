@@ -307,6 +307,22 @@ def _process_contact(data, db, cursor, operators, stations):
     section = data.get('section', '').upper()
     comment = data.get('comment', '')
 
+    # Prefix multiplier (e.g. CQ WPX): TR4W/N1MM send the scored WPX prefix.
+    prefix = data.get('wpxprefix', '').upper()
+
+    # Zone multiplier: TR4W/N1MM carry a single <zone> field whose meaning is
+    # contest-dependent -- the ITU zone for IARU HF, the CQ zone for CQ contests.
+    # Route it to the matching column based on the configured multiplier type so
+    # the map query can read the right one. (exchange1 also holds it, e.g.
+    # "59 8", but <zone> is already parsed to just the number.)
+    zone = data.get('zone', '').strip()
+    ituzone = zone if config.MULTS == 'ITUZONES' else ''
+    cqzone = zone if config.MULTS == 'CQZONES' else ''
+
+    # Maidenhead grid multiplier (VHF/UHF contests): the worked station's grid
+    # square. Only stored in GRID mode; the map computes each cell from this.
+    grid = data.get('gridsquare', '').upper() if config.MULTS == 'GRID' else ''
+
     # Extract state from section when in STATES multiplier mode
     if config.MULTS == 'STATES':
         state = section
@@ -316,7 +332,8 @@ def _process_contact(data, db, cursor, operators, stations):
     dataaccess.record_contact_combined(db, cursor, operators, stations,
                                        timestamp, mycall, band, mode, operator, station,
                                        rx_freq, tx_freq, callsign, rst_sent, rst_recv,
-                                       exchange, section, comment, qso_id, state=state)
+                                       exchange, section, comment, qso_id, state=state,
+                                       ituzone=ituzone, cqzone=cqzone, prefix=prefix, grid=grid)
 
     # Fallback radio display: keep the station visible on the radio panel from
     # its QSO traffic even if its RadioInfo broadcasts aren't being received.

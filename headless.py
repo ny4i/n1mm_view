@@ -148,9 +148,18 @@ def create_images(size, image_dir, last_qso_timestamp):
         # load QSOs by Section/State -- always load this since map is always drawn
         if config.MULTS == 'STATES':
             qsos_by_section = dataaccess.get_qsos_by_state(cursor)
+        elif config.MULTS == 'ITUZONES':
+            qsos_by_section = dataaccess.get_qsos_by_ituzone(cursor)
+        elif config.MULTS == 'CQZONES':
+            qsos_by_section = dataaccess.get_qsos_by_cqzone(cursor)
+        elif config.MULTS == 'GRID':
+            qsos_by_section = dataaccess.get_qsos_by_grid(cursor)
         else:
             qsos_by_section = dataaccess.get_qsos_by_section(cursor)
         logging.debug("get_qsos_by_section returned %s qsos" % (qsos_by_section))
+
+        # load IARU HQ-station multiplier counts (independent of the zone map)
+        qsos_by_hq = dataaccess.get_qsos_by_hq(cursor) if config.SHOW_HQ_STATIONS else {}
 
         # load radio info
         radio_info = dataaccess.get_radio_info(cursor)
@@ -177,14 +186,19 @@ def create_images(size, image_dir, last_qso_timestamp):
             (lambda: graphics.qso_operators_graph(size, qso_operators),     'qso_operators_graph',     'QSOs by Operator'),
             (lambda: graphics.qso_operators_table(size, qso_operators),     'qso_operators_table',     'Operator Totals'),
             (lambda: graphics.qso_operators_table_all(size, qso_operators), 'qso_operators_table_all', 'All Operator Stats'),
-            (lambda: graphics.qso_stations_graph(size, qso_stations),       'qso_stations_graph',      'QSOs by Station'),
             (lambda: graphics.qso_bands_graph(size, qso_band_modes),        'qso_bands_graph',         'QSOs by Band'),
             (lambda: graphics.qso_modes_graph(size, qso_band_modes),        'qso_modes_graph',         'QSOs by Mode'),
-            (lambda: graphics.qso_classes_graph(size, qso_classes),         'qso_classes_graph',       'QSOs by Class'),
-            (lambda: graphics.qso_categories_graph(size, qso_categories),   'qso_categories_graph',    'QSOs by Category'),
             (lambda: graphics.qso_rates_graph(size, qsos_per_hour),         'qso_rates_graph',         'QSO Rate Over Time'),
             (lambda: graphics.qso_table(size, qsos),                        'last_qso_table',          'Recent QSOs'),
         ]
+        # Optional base charts (see config): skip the builder entirely when off,
+        # so no PNG is generated and the slot won't appear in the carousel.
+        if config.SHOW_QSOS_BY_STATION:
+            count_charts.append((lambda: graphics.qso_stations_graph(size, qso_stations),   'qso_stations_graph',    'QSOs by Station'))
+        if config.SHOW_QSOS_BY_CLASS:
+            count_charts.append((lambda: graphics.qso_classes_graph(size, qso_classes),     'qso_classes_graph',     'QSOs by Class'))
+        if config.SHOW_QSOS_BY_CATEGORY:
+            count_charts.append((lambda: graphics.qso_categories_graph(size, qso_categories), 'qso_categories_graph', 'QSOs by Category'))
         for builder, basename, blank_title in count_charts:
             try:
                 image_data, image_size = builder()
@@ -229,6 +243,15 @@ def create_images(size, image_dir, last_qso_timestamp):
             image_data, image_size = graphics.draw_mults_remaining(size, qsos_by_section)
             if image_data is not None:
                 filename = makePNGTitle(image_dir, 'mults_remaining')
+                graphics.save_image(image_data, image_size, filename)
+        except Exception as e:
+            logging.exception(e)
+
+    if config.SHOW_HQ_STATIONS:
+        try:
+            image_data, image_size = graphics.draw_hq_stations(size, qsos_by_hq)
+            if image_data is not None:
+                filename = makePNGTitle(image_dir, 'hq_stations')
                 graphics.save_image(image_data, image_size, filename)
         except Exception as e:
             logging.exception(e)
@@ -354,21 +377,29 @@ def write_index_html(image_dir):
         ('QSOs by Operator', 'qso_operators_graph.png', 'img'),
         ('Operator Totals', 'qso_operators_table.png', 'img'),
         ('All Operator Stats', 'qso_operators_table_all.png', 'img'),
-        ('QSOs by Station', 'qso_stations_graph.png', 'img'),
-        ('QSOs by Band', 'qso_bands_graph.png', 'img'),
-        ('QSOs by Mode', 'qso_modes_graph.png', 'img'),
-        ('QSOs by Class', 'qso_classes_graph.png', 'img'),
-        ('QSOs by Category', 'qso_categories_graph.png', 'img'),
     ]
+    # QSOs by Station is optional (hidden for single-station setups); keep it in
+    # its original position between operator stats and the band/mode charts.
+    if config.SHOW_QSOS_BY_STATION:
+        slides.append(('QSOs by Station', 'qso_stations_graph.png', 'img'))
+    slides.append(('QSOs by Band', 'qso_bands_graph.png', 'img'))
+    slides.append(('QSOs by Mode', 'qso_modes_graph.png', 'img'))
+    # Class/Category are Field Day exchange concepts; optional for other contests.
+    if config.SHOW_QSOS_BY_CLASS:
+        slides.append(('QSOs by Class', 'qso_classes_graph.png', 'img'))
+    if config.SHOW_QSOS_BY_CATEGORY:
+        slides.append(('QSOs by Category', 'qso_categories_graph.png', 'img'))
 
     # Add optional slides based on config (radio_info is in sidebar). The
     # multiplier slides are titled by contest type (Sections/States) to match
     # the title rendered inside the chart image.
     mult_name = constants.get_mult_name()
     if config.SHOW_MULT_PROGRESS:
-        slides.append((f'{mult_name} Progress', 'mults_progress.png', 'img'))
+        slides.append(('Multiplier Progress', 'mults_progress.png', 'img'))
     if config.SHOW_MULT_REMAINING:
         slides.append((f'{mult_name} Remaining', 'mults_remaining.png', 'img'))
+    if config.SHOW_HQ_STATIONS:
+        slides.append(('HQ Stations Worked', 'hq_stations.png', 'img'))
     if config.SHOW_OPERATOR_LEADERBOARD:
         slides.append(('Operator Leaderboard', 'operator_leaderboard.png', 'img'))
     if config.SHOW_NEW_OPS_RACE:
@@ -849,6 +880,18 @@ def write_index_html(image_dir):
 
 <script>
 (function() {{
+  // Server-clock skew: serverTime - clientTime, in ms. The big dashboard may
+  // be viewed on a device whose own clock is wrong -- at the FD site there is
+  // no internet, so a kiosk/laptop/phone that never synced NTP can be off by
+  // minutes or hours. Anchoring the clock and countdown below to the bare
+  // browser clock then shows the wrong time of day AND the wrong "starts in".
+  // The live pollers set this from each API response's server_time so both
+  // track the Pi's clock, not the viewer's. Mirrors the /m mobile page.
+  var clockSkewMs = 0;
+  function noteServerTime(data) {{
+    if (data && data.server_time) clockSkewMs = data.server_time * 1000 - Date.now();
+  }}
+
   // --- Clock + countdown ------------------------------------------------
   var startMs = Date.parse('{start_iso}');
   var endMs = Date.parse('{end_iso}');
@@ -868,7 +911,7 @@ def write_index_html(image_dir):
   }}
 
   function tickClock() {{
-    var now = new Date();
+    var now = new Date(Date.now() + clockSkewMs);
     utcEl.textContent =
       pad(now.getUTCHours()) + ':' + pad(now.getUTCMinutes()) + ':' + pad(now.getUTCSeconds());
     localEl.textContent =
@@ -1125,6 +1168,7 @@ def write_index_html(image_dir):
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         return resp.json();
       }}).then(function(data) {{
+        noteServerTime(data);
         enterLiveMode();
         clearDisconnected();
         renderRadios(data);
@@ -1221,6 +1265,7 @@ def write_index_html(image_dir):
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         return resp.json();
       }}).then(function(data) {{
+        noteServerTime(data);
         liveMode = true;
         render(data);
         setTimeout(poll, pollMs);
