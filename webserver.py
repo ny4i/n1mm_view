@@ -757,7 +757,7 @@ MOBILE_HTML = r"""<!DOCTYPE html>
     <div id="summary"><span class="muted">Loading…</span></div>
   </section>
 
-  <section>
+  <section id="newops-section">
     <h2>New Operators</h2>
     <div id="newops"><span class="muted">Loading…</span></div>
   </section>
@@ -924,13 +924,15 @@ async function getJSON(url) {
 
 async function load() {
   try {
-    const [lq, radio, summary, newops] = await Promise.all([
-      getJSON('/api/last_qso'), getJSON('/api/radio'),
-      getJSON('/api/summary'), getJSON('/api/new_ops'),
-    ]);
+    const reqs = [
+      getJSON('/api/last_qso'), getJSON('/api/radio'), getJSON('/api/summary'),
+    ];
+    if (EVENT.show_newops) reqs.push(getJSON('/api/new_ops'));
+    const [lq, radio, summary, newops] = await Promise.all(reqs);
     if (lq && lq.server_time) skew = lq.server_time - Date.now() / 1000;
     renderLastQso(lq); renderRadios(radio);
-    renderSummary(summary); renderNewOps(newops);
+    renderSummary(summary);
+    if (EVENT.show_newops) renderNewOps(newops);
     lastOk = Date.now() / 1000;
     const dt = new Date(nowSec() * 1000);
     document.getElementById('updated').textContent =
@@ -943,6 +945,10 @@ async function load() {
 
 document.getElementById('event').textContent = EVENT.name || 'n1mm_view';
 document.getElementById('ver').textContent = EVENT.version || '';
+if (!EVENT.show_newops) {
+  const ns = document.getElementById('newops-section');
+  if (ns) ns.remove();
+}
 tick();
 load();
 setInterval(tick, 1000);
@@ -1074,6 +1080,9 @@ def _event_meta():
         'start': epoch(getattr(config, 'EVENT_START_TIME', None)),
         'end': epoch(getattr(config, 'EVENT_END_TIME', None)),
         'version': VERSION,
+        # Mobile only shows the New Operators roster when that feature is on,
+        # matching the full dashboard's SHOW_NEW_OPS_ROSTER toggle.
+        'show_newops': bool(getattr(config, 'SHOW_NEW_OPS_ROSTER', False)),
     }
 
 
