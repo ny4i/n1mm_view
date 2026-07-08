@@ -51,6 +51,9 @@ CHARTS = [
     ('mults_progress.png',           'Multiplier Progress'),
     ('mults_remaining.png',          '%s Remaining' % constants.get_mult_name()),
     ('operator_leaderboard.png',     'Operator Leaderboard'),
+    # WRTC special-callsign roster (derived from qso_log, so it should clear on
+    # a DB wipe; also starts blank before the calls are issued).
+    ('wrtc_stations.png',            'WRTC Stations Worked'),
     # Recent QSOs sidebar (derived from qso_log, so it should clear on a DB wipe).
     ('last_qso_table.png',           'Recent QSOs'),
     # NOTE: intentionally NOT blanked -- these don't come from the current

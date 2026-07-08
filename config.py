@@ -205,6 +205,18 @@ class Config(metaclass = Singleton):
         # a society abbreviation in the section field. Only meaningful for IARU.
         self.SHOW_HQ_STATIONS = cfg.getboolean('FEATURES', 'SHOW_HQ_STATIONS', fallback=False)
 
+        # IARU HF only: WRTC ("World Radiosport Team Championship") is a
+        # once-every-four-years "contest within the contest" -- ~50 teams issued
+        # special callsigns shortly before the start (unknown until then). This
+        # slide shows how many of those callsigns we've worked, like the HQ
+        # roster. The callsign list is read from WRTC_CALLSIGNS_FILE at render
+        # time (not startup) so the calls can be dropped in without a restart.
+        # Only callsigns are ever read/shown -- never team identities -- in line
+        # with WRTC's anti-cheerleading policy.
+        self.SHOW_WRTC = cfg.getboolean('FEATURES', 'SHOW_WRTC', fallback=False)
+        self.WRTC_CALLSIGNS_FILE = cfg.get('WRTC', 'CALLSIGNS_FILE',
+                                           fallback='wrtc2026.txt')
+
         # Base count charts. These default ON (opt-out) so existing multi-op/FD
         # setups are unchanged; single-station or non-FD events can hide the ones
         # that don't apply -- QSOs by Station (one station), and Class/Category
@@ -249,5 +261,5 @@ class Config(metaclass = Singleton):
         if self.EXTERNAL_SLIDES:
             logging.info('External slides: %s', [t for t, _ in self.EXTERNAL_SLIDES])
 
-        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, HQ_STATIONS=%s, OPERATOR_LEADERBOARD=%s, QSOS_BY_STATION=%s, QSOS_BY_CLASS=%s, QSOS_BY_CATEGORY=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
-                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_HQ_STATIONS, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_QSOS_BY_STATION, self.SHOW_QSOS_BY_CLASS, self.SHOW_QSOS_BY_CATEGORY, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)
+        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, HQ_STATIONS=%s, WRTC=%s, OPERATOR_LEADERBOARD=%s, QSOS_BY_STATION=%s, QSOS_BY_CLASS=%s, QSOS_BY_CATEGORY=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
+                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_HQ_STATIONS, self.SHOW_WRTC, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_QSOS_BY_STATION, self.SHOW_QSOS_BY_CLASS, self.SHOW_QSOS_BY_CATEGORY, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)

@@ -126,6 +126,14 @@ SHOW_MULT_ALERT = False
 # Coexists with the ITU-zone map (MULTS = ITUZONES); leave False for other
 # contests.
 SHOW_HQ_STATIONS = False
+# IARU HF only: WRTC ("contest within the contest", every four years). ~50 teams
+# get special callsigns issued shortly before the start. This slide shows a
+# worked/total count with a progress bar over the roster of WRTC callsigns,
+# worked ones in green. The callsign list comes from [WRTC] CALLSIGNS_FILE
+# below, re-read each cycle so the calls can be dropped in without a restart.
+# Only callsigns are shown -- never team names -- per WRTC's anti-cheerleading
+# policy. Leave False for other contests.
+SHOW_WRTC = False
 # Ranked operator leaderboard with positions and percentages
 SHOW_OPERATOR_LEADERBOARD = False
 # Base count charts (default True). Turn off the ones that don't apply:
@@ -150,6 +158,16 @@ SHOW_NEW_OPS_ROSTER = False
 # a carousel slide. Reads PRIOR_OPERATORS_DB (built by import_prior_operators.py)
 # and appends the current event as a "live" bar.
 SHOW_NEW_OPS_YOY = False
+
+[WRTC]
+; Path to a plain-text file listing the WRTC special callsigns (one per line).
+; Read fresh on every render cycle, so once the calls are announced you can just
+; drop them into this file -- no restart needed. Blank lines and lines starting
+; with '#' are ignored. Only the first token on each line is used as the
+; callsign; any trailing text is discarded, so team names are never displayed.
+; Relative paths resolve from the n1mm_view working directory. Only used when
+; SHOW_WRTC = True.
+CALLSIGNS_FILE = wrtc2026.txt
 
 [NEW_OPERATORS]
 ; Path to a prior event's n1mm_view DB. Operators in the current event whose

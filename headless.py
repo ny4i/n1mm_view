@@ -161,6 +161,16 @@ def create_images(size, image_dir, last_qso_timestamp):
         # load IARU HQ-station multiplier counts (independent of the zone map)
         qsos_by_hq = dataaccess.get_qsos_by_hq(cursor) if config.SHOW_HQ_STATIONS else {}
 
+        # load the WRTC special-callsign roster + worked counts. The roster file
+        # is re-read every cycle so calls issued mid-event show up without a
+        # restart; qsos_by_wrtc is the subset of that roster found in the log.
+        if config.SHOW_WRTC:
+            wrtc_calls = dataaccess.load_wrtc_callsigns(config.WRTC_CALLSIGNS_FILE)
+            qsos_by_wrtc = dataaccess.get_qsos_by_wrtc(cursor, wrtc_calls)
+        else:
+            wrtc_calls = []
+            qsos_by_wrtc = {}
+
         # load radio info
         radio_info = dataaccess.get_radio_info(cursor)
 
@@ -253,6 +263,16 @@ def create_images(size, image_dir, last_qso_timestamp):
             if image_data is not None:
                 filename = makePNGTitle(image_dir, 'hq_stations')
                 graphics.save_image(image_data, image_size, filename)
+        except Exception as e:
+            logging.exception(e)
+
+    if config.SHOW_WRTC:
+        try:
+            image_data, image_size = graphics.draw_wrtc_stations(size, qsos_by_wrtc, wrtc_calls)
+            # save_chart writes a blank "WRTC Stations Worked" placeholder when
+            # the roster is still empty (calls not yet issued), so the slide is
+            # never a broken/stale image.
+            save_chart(image_dir, 'wrtc_stations', image_data, image_size, size, 'WRTC Stations Worked')
         except Exception as e:
             logging.exception(e)
 
@@ -400,6 +420,8 @@ def write_index_html(image_dir):
         slides.append((f'{mult_name} Remaining', 'mults_remaining.png', 'img'))
     if config.SHOW_HQ_STATIONS:
         slides.append(('HQ Stations Worked', 'hq_stations.png', 'img'))
+    if config.SHOW_WRTC:
+        slides.append(('WRTC Stations Worked', 'wrtc_stations.png', 'img'))
     if config.SHOW_OPERATOR_LEADERBOARD:
         slides.append(('Operator Leaderboard', 'operator_leaderboard.png', 'img'))
     if config.SHOW_NEW_OPS_RACE:

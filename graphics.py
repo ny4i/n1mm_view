@@ -1324,6 +1324,127 @@ def draw_hq_stations(size, qsos_by_hq):
     return raw_data, result_size
 
 
+def draw_wrtc_stations(size, qsos_by_wrtc, all_calls):
+    """
+    Draw the WRTC-station roster chart: a worked/total header with a progress
+    bar over a grid of the WRTC special callsigns, worked ones highlighted
+    (bright green) and unworked ones dimmed.
+
+    WRTC (World Radiosport Team Championship) is IARU HF's every-four-years
+    "contest within the contest": ~50 teams issued special callsigns just before
+    the start. Unlike the open-ended HQ roster, working all of them is a real
+    goal, so the progress bar is a genuine gauge. The roster (all_calls) is read
+    from a file at render time; only callsigns are shown -- never team
+    identities -- in line with WRTC's anti-cheerleading policy.
+
+    Returns (raw_data, size) or (None, (0,0)) if the roster is empty (e.g.
+    before the callsigns have been issued).
+    """
+    logging.debug('draw_wrtc_stations()')
+
+    all_calls = sorted(all_calls or [])
+    total = len(all_calls)
+    if total == 0:
+        return None, (0, 0)
+
+    if qsos_by_wrtc is None:
+        qsos_by_wrtc = {}
+
+    worked_set = {call for call in all_calls if qsos_by_wrtc.get(call, 0) > 0}
+    num_worked = len(worked_set)
+    percentage = (num_worked / total) * 100
+
+    padding = 20
+
+    title_font = bigger_font
+    title = 'WRTC Stations Worked'
+    title_height = title_font.get_height()
+
+    sub_font = view_font
+    sub_text = f'{num_worked}/{total} WRTC worked ({percentage:.0f}%)'
+    sub_height = sub_font.get_height()
+
+    cell_font = view_font
+    cell_height = cell_font.get_height() + 8
+
+    # Callsigns are wider than the short HQ abbreviations, so pack fewer columns.
+    max_code_width = max(cell_font.size(code)[0] for code in all_calls)
+    cell_width = max_code_width + 30
+    num_cols = 6
+    num_rows = (total + num_cols - 1) // num_cols
+
+    table_width = num_cols * cell_width
+    table_height = num_rows * cell_height
+
+    bar_height = 40
+    min_bar_width = 400
+
+    title_width = title_font.size(title)[0]
+    sub_width = sub_font.size(sub_text)[0]
+    content_width = max(title_width, sub_width, table_width, min_bar_width)
+    surface_width = content_width + padding * 2
+
+    # Vertical layout: title, subtitle, progress bar, then the roster grid.
+    y_cursor = padding
+    title_y = y_cursor
+    y_cursor += title_height + padding
+    sub_y = y_cursor
+    y_cursor += sub_height + padding
+    bar_y = y_cursor
+    y_cursor += bar_height + padding
+    grid_y = y_cursor
+    y_cursor += table_height + padding
+    surface_height = y_cursor
+
+    surf = pygame.Surface((surface_width, surface_height))
+    surf.fill(BLACK)
+
+    # Title
+    title_surf = title_font.render(title, True, WHITE)
+    title_rect = title_surf.get_rect()
+    title_rect.centerx = surface_width // 2
+    title_rect.y = title_y
+    surf.blit(title_surf, title_rect)
+
+    # Subtitle count
+    sub_surf = sub_font.render(sub_text, True, CYAN)
+    sub_rect = sub_surf.get_rect()
+    sub_rect.centerx = surface_width // 2
+    sub_rect.y = sub_y
+    surf.blit(sub_surf, sub_rect)
+
+    # Progress bar (green fill; here it is a true "how many of the 50 teams" gauge)
+    bar_margin = 50
+    bar_width = surface_width - 2 * bar_margin
+    bar_bg_rect = pygame.Rect(bar_margin, bar_y, bar_width, bar_height)
+    pygame.draw.rect(surf, GRAY, bar_bg_rect, 3)
+    if num_worked > 0:
+        fill_width = int(bar_width * num_worked / total)
+        if fill_width < 6:
+            fill_width = 6
+        fill_rect = pygame.Rect(bar_margin + 3, bar_y + 3, fill_width - 6, bar_height - 6)
+        pygame.draw.rect(surf, GREEN, fill_rect)
+
+    # Roster grid: worked = bright green, unworked = dim gray.
+    start_x = (surface_width - table_width) // 2
+    for i, code in enumerate(all_calls):
+        col = i % num_cols
+        row = i // num_cols
+        x = start_x + col * cell_width
+        y = grid_y + row * cell_height
+        color = GREEN if code in worked_set else DARK_GRAY
+        code_surf = cell_font.render(code, True, color)
+        code_rect = code_surf.get_rect()
+        code_rect.centerx = x + cell_width // 2
+        code_rect.y = y
+        surf.blit(code_surf, code_rect)
+
+    result_size = surf.get_size()
+    raw_data = pygame.image.tostring(surf, image_format)
+    logging.debug('draw_wrtc_stations() done')
+    return raw_data, result_size
+
+
 def draw_operator_leaderboard(size, qso_operators):
     """
     Draw a ranked operator leaderboard table.

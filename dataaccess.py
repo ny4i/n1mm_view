@@ -703,6 +703,53 @@ def get_qsos_by_hq(cursor):
     return qsos_by_hq
 
 
+def load_wrtc_callsigns(path):
+    """Read the WRTC roster file and return a sorted, de-duplicated list of
+    uppercased callsigns. One callsign per line; blank lines and '#' comments
+    ignored. Only the first whitespace/comma-delimited token on a line is taken
+    as the callsign -- any trailing text (e.g. a team label) is deliberately
+    dropped and never stored, keeping team identities off the display in line
+    with WRTC's anti-cheerleading policy. Returns [] if the path is empty, the
+    file is missing, or it has no callsigns yet (the calls are not issued until
+    shortly before the contest)."""
+    if not path:
+        return []
+    calls = []
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                token = line.replace(',', ' ').split()[0]
+                calls.append(token.upper())
+    except OSError as e:
+        logging.warning('cannot read WRTC callsign file %s: %s', path, e)
+        return []
+    return sorted(set(calls))
+
+
+def get_qsos_by_wrtc(cursor, callsigns):
+    """QSO counts keyed by WRTC special callsign, restricted to the subset of
+    `callsigns` that appear in the log. Matched case-insensitively on the logged
+    callsign; Field Day dupes / own-effort contacts are excluded like every
+    other chart. Returns {} if the roster is empty."""
+    if not callsigns:
+        return {}
+    wanted = {c.upper() for c in callsigns}
+    logging.debug('Load QSOs by WRTC station')
+    qsos_by_wrtc = {}
+    cursor.execute('SELECT UPPER(callsign) AS call, COUNT(*) AS qsos FROM qso_log'
+                   + _exclude_clause(cursor, ' WHERE ') +
+                   ' GROUP BY UPPER(callsign);')
+    for row in cursor:
+        call = row[0]
+        if call in wanted:
+            qsos_by_wrtc[call] = qsos_by_wrtc.get(call, 0) + row[1]
+            logging.debug(f'wrtc {call} {row[1]}')
+    return qsos_by_wrtc
+
+
 def get_operator_first_qsos(cursor):
     """
     For each operator that has logged at least one QSO in THIS event's DB,
