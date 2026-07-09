@@ -296,7 +296,7 @@ US_STATES = {
 # Radio zones partition the globe and are used as the multiplier in zone
 # contests: ITU zones 1..90 (IARU HF Championship) and CQ zones 1..40 (CQ WW,
 # CQ WPX-by-zone, etc.). Geometry lives in shapes/itu_zones.geojson and
-# shapes/cq_zones.geojson (see extract_zones.py). Keys are zone numbers as
+# shapes/cq_zones.geojson (see utils/extract_zones.py). Keys are zone numbers as
 # strings so they match the 'zone' property in the GeoJSON and the value logged
 # in the QSO record.
 ITU_ZONES = {str(n): 'Zone %d' % n for n in range(1, 91)}

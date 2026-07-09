@@ -232,11 +232,11 @@ class Config(metaclass = Singleton):
         # SHOW_NEW_OPS_* flags.
         self.PRIOR_DB_FILENAME = cfg.get('NEW_OPERATORS', 'PRIOR_DB_FILENAME', fallback='')
         self.PRIOR_EVENT_LABEL = cfg.get('NEW_OPERATORS', 'PRIOR_EVENT_LABEL', fallback='Last Year')
-        # Consolidated prior-operators DB built by import_prior_operators.py.
+        # Consolidated prior-operators DB built by utils/import_prior_operators.py.
         # This is the runtime source for the "not new" lookup AND the YOY chart.
         self.PRIOR_OPERATORS_DB = cfg.get('NEW_OPERATORS', 'PRIOR_OPERATORS_DB',
                                           fallback='prior_operators.db')
-        # ADIF directory — used only by import_prior_operators.py to build
+        # ADIF directory — used only by utils/import_prior_operators.py to build
         # PRIOR_OPERATORS_DB; not read on every render.
         self.PRIOR_ADIF_DIR = cfg.get('NEW_OPERATORS', 'PRIOR_ADIF_DIR', fallback='')
         # Regex (case-insensitive) used by the YOY chart to filter which

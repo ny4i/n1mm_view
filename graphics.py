@@ -1783,7 +1783,7 @@ def grid_to_bbox(grid):
         lon_size, lat_size = 2.0 / 24.0, 1.0 / 24.0
     return (lon, lat, lon + lon_size, lat + lat_size)
 
-# Per-mode zone fill-polygon geojson, built by extract_zones.py from the
+# Per-mode zone fill-polygon geojson, built by utils/extract_zones.py from the
 # Leaflet.ITUzones / Leaflet.CQzones boundary data.
 ZONE_GEOJSON = {
     'ITUZONES': 'shapes/itu_zones.geojson',
@@ -1804,7 +1804,7 @@ def _load_zone_geometries(path):
     from shapely.geometry import shape
     geometries = {}
     if not os.path.exists(path):
-        logging.warning('zone geometry not found: %s (run extract_zones.py)' % path)
+        logging.warning('zone geometry not found: %s (run utils/extract_zones.py)' % path)
     else:
         with open(path) as fh:
             fc = json.load(fh)

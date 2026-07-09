@@ -72,7 +72,7 @@ def create_tables(db, cursor):
 
     # Migration: add duplicate flag to pre-existing databases. 0 = counts,
     # 1 = Field Day dupe (same callsign+band+simple-mode group, worked again) and
-    # must be excluded from scoring. Set by find_dupes.py --apply; defaults to 0
+    # must be excluded from scoring. Set by utils/find_dupes.py --apply; defaults to 0
     # so existing rows and live logging are unaffected until that pass is run.
     try:
         cursor.execute('ALTER TABLE qso_log ADD COLUMN duplicate INTEGER NOT NULL DEFAULT 0;')
@@ -83,7 +83,7 @@ def create_tables(db, cursor):
 
     # Migration: add own_effort flag. 1 = the worked callsign belongs to one of
     # our own site operators (working your own effort is not allowed) and the
-    # QSO must be excluded from scoring. Set by check_operator_worked.py --apply.
+    # QSO must be excluded from scoring. Set by utils/check_operator_worked.py --apply.
     # Kept separate from `duplicate` so the two checks never clobber each other.
     try:
         cursor.execute('ALTER TABLE qso_log ADD COLUMN own_effort INTEGER NOT NULL DEFAULT 0;')
@@ -446,7 +446,7 @@ def _exclude_clause(cursor, prefix=' WHERE '):
     Day duplicates (`duplicate = 1`) and own-effort contacts where we worked one
     of our own operators (`own_effort = 1`).
 
-    Older archives (read by one_chart.py and generate_comparison_charts.py) may
+    Older archives (read by one_chart.py and utils/generate_comparison_charts.py) may
     have neither column, so a hard `WHERE duplicate = 0` would raise "no such
     column". This checks which columns exist once per call and includes only
     those, degrading to a no-op clause when none are present.

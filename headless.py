@@ -284,7 +284,7 @@ def create_images(size, image_dir, last_qso_timestamp):
             logging.exception(e)
 
     # New-operator displays: race-curve, roster, and YOY bar. Prior-ops data
-    # comes from PRIOR_OPERATORS_DB (built by import_prior_operators.py) with
+    # comes from PRIOR_OPERATORS_DB (built by utils/import_prior_operators.py) with
     # a fallback to PRIOR_DB_FILENAME for first-year setups.
     if data_updated and (config.SHOW_NEW_OPS_RACE or config.SHOW_NEW_OPS_ROSTER
                           or config.SHOW_NEW_OPS_YOY):
@@ -294,7 +294,7 @@ def create_images(size, image_dir, last_qso_timestamp):
                 cur_first = dataaccess.get_operator_first_qsos(db.cursor())
             finally:
                 db.close()
-            # Consolidated prior-ops list (built by import_prior_operators.py).
+            # Consolidated prior-ops list (built by utils/import_prior_operators.py).
             # Fall back to PRIOR_DB_FILENAME alone if the consolidated DB has
             # not been generated yet.
             prior_names = dataaccess.get_prior_operators_from_consolidated_db(

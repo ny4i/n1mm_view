@@ -26,6 +26,11 @@ import shutil
 import sqlite3
 import time
 
+# Running from the utils/ subdirectory: put the project root on sys.path so the
+# shared top-level modules (config, constants, dataaccess, graphics) import.
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+
 from config import Config
 
 config = Config()

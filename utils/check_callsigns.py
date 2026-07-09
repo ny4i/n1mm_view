@@ -35,6 +35,11 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 
+# Running from the utils/ subdirectory: put the project root on sys.path so the
+# shared top-level modules (config, constants, dataaccess, graphics) import.
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+
 import constants
 from config import Config
 
