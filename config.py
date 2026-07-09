@@ -95,7 +95,30 @@ class Config(metaclass = Singleton):
             logging.warning('Invalid MULTS value "%s", defaulting to SECTIONS' % self.MULTS)
             self.MULTS = 'SECTIONS'
         logging.info('MULTS mode set to %s' % self.MULTS)
-        
+
+        # CONTEST_MODES is an allow-list over the CW/PHONE/DATA score groups.
+        # Some contests don't permit every group (e.g. IARU HF has no DATA), so
+        # this drops the empty column from the QSO Summary/score table. Default
+        # is all three, so existing configs are unchanged. The QSOs-by-Mode pie
+        # already hides empty groups on its own. Values map to the non-N/A
+        # entries of constants.Modes.SIMPLE_MODES_LIST (kept here to avoid a
+        # circular import: constants imports config).
+        VALID_CONTEST_MODES = ('CW', 'PHONE', 'DATA')
+        raw_modes = cfg.get('GLOBAL', 'CONTEST_MODES',
+                            fallback=','.join(VALID_CONTEST_MODES))
+        requested = {m.strip().upper() for m in raw_modes.split(',') if m.strip()}
+        invalid = requested - set(VALID_CONTEST_MODES)
+        if invalid:
+            logging.warning('Ignoring invalid CONTEST_MODES value(s) %s; valid: %s',
+                            sorted(invalid), list(VALID_CONTEST_MODES))
+        # Canonical CW/PHONE/DATA order, regardless of how the ini lists them.
+        self.CONTEST_MODES = [m for m in VALID_CONTEST_MODES if m in requested]
+        if not self.CONTEST_MODES:
+            logging.warning('CONTEST_MODES empty/invalid, defaulting to %s',
+                            list(VALID_CONTEST_MODES))
+            self.CONTEST_MODES = list(VALID_CONTEST_MODES)
+        logging.info('Contest modes: %s', self.CONTEST_MODES)
+
         self.LOGO_FILENAME = cfg.get('GLOBAL','LOGO_FILENAME',fallback='logo.png')
         if not os.path.exists(self.LOGO_FILENAME):
            logging.error('Logo file %s does not exist' % (self.LOGO_FILENAME))

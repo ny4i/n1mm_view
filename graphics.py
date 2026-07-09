@@ -432,35 +432,46 @@ def make_score_table(qso_band_modes):
     """
     create the score table from data
     """
+    # Only render the simple-mode columns the contest allows (config.CONTEST_MODES).
+    # Canonical CW/PHONE/DATA order is preserved by walking SIMPLE_MODES_LIST.
+    active_modes = [i for i in range(1, len(Modes.SIMPLE_MODES_LIST))
+                    if Modes.SIMPLE_MODES_LIST[i] in config.CONTEST_MODES]
+
     cell_data = [[0 for m in Modes.SIMPLE_MODES_LIST] for b in Bands.BANDS_TITLE]
 
     for band_num in range(1, Bands.count()):
-        for mode_num in range(1, len(Modes.SIMPLE_MODES_LIST)):
+        for mode_num in active_modes:
             cell_data[band_num][mode_num] = qso_band_modes[band_num][mode_num]
             cell_data[band_num][0] += qso_band_modes[band_num][mode_num]
             cell_data[0][mode_num] += qso_band_modes[band_num][mode_num]
 
     total = 0
-    for c in cell_data[0][1:]:
-        total += c
+    for mode_num in active_modes:
+        total += cell_data[0][mode_num]
     cell_data[0][0] = total
 
+    # '%5s' keeps the original column widths: 'CW'->'   CW', 'Phone', ' Data'.
+    def _mode_label(name):
+        return name if name == 'CW' else name.title()
+
     # the totals are in the 0th row and 0th column, move them to last.
-    cell_text = [['', '   CW', 'Phone', ' Data', 'Total']]
+    header = [''] + ['%5s' % _mode_label(Modes.SIMPLE_MODES_LIST[i])
+                     for i in active_modes] + ['Total']
+    cell_text = [header]
     band_num = 0
     for row in cell_data[1:]:
         band_num += 1
         row_text = ['%5s' % Bands.BANDS_TITLE[band_num]]
 
-        for col in row[1:]:
-            row_text.append('%5d' % col)
+        for mode_num in active_modes:
+            row_text.append('%5d' % row[mode_num])
         row_text.append('%5d' % row[0])
         cell_text.append(row_text)
 
     row = cell_data[0]
     row_text = ['Total']
-    for col in row[1:]:
-        row_text.append('%5d' % col)
+    for mode_num in active_modes:
+        row_text.append('%5d' % row[mode_num])
     row_text.append('%5d' % row[0])
     cell_text.append(row_text)
     return cell_text
