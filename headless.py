@@ -385,6 +385,45 @@ def write_index_html(image_dir):
     event_name_json = json.dumps(event_name)
     radio_poll = max(1, getattr(config, 'RADIO_POLL_SECONDS', 2))
 
+    # Server-rendered fallback for the "Last QSO" header. The header is normally
+    # populated live by polling /api/last_qso, but rsync'd remote copies have no
+    # API to reach -- without a baked-in value they'd show a bare em-dash even
+    # though the Pi-served page shows the QSO fine. Query the newest QSO now and
+    # embed it (mirrors the /api/last_qso query in webserver.py); the live poller
+    # upgrades it when the API is reachable, and the age ticks client-side either
+    # way, refreshing each time headless regenerates + rsyncs this page.
+    last_qso_json = 'null'
+    try:
+        _db = sqlite3.connect(config.DATABASE_FILENAME)
+        try:
+            _cur = _db.cursor()
+            _cur.execute(
+                'SELECT timestamp, callsign, exchange, section, operator.name, '
+                '       band_id, mode_id, station.name '
+                'FROM qso_log JOIN operator ON operator.id = operator_id '
+                'JOIN station ON station.id = station_id '
+                'ORDER BY timestamp DESC LIMIT 1;')
+            _row = _cur.fetchone()
+        finally:
+            _db.close()
+        if _row:
+            _band = (constants.Bands.BANDS_TITLE[_row[5]]
+                     if 0 <= _row[5] < constants.Bands.count() else '')
+            _mode = (constants.Modes.SIMPLE_MODES_LIST[constants.Modes.MODE_TO_SIMPLE_MODE[_row[6]]]
+                     if 0 <= _row[6] < len(constants.Modes.MODE_TO_SIMPLE_MODE) else '')
+            last_qso_json = json.dumps({
+                'timestamp': _row[0],
+                'callsign': _row[1],
+                'exchange': _row[2],
+                'section': _row[3],
+                'operator': _row[4],
+                'band': _band,
+                'mode': _mode,
+                'station': _row[7],
+            })
+    except Exception as _e:
+        logging.warning('could not build last-QSO header fallback: %s', _e)
+
     # Build slides list - base slides always included.
     # Each entry is (title, src, kind) where kind is 'img' (PNG written by
     # create_images) or 'iframe' (external URL). Note: Radio Status and Recent
@@ -1220,6 +1259,9 @@ def write_index_html(image_dir):
     var pollMs = {radio_poll} * 1000;
     var retryMs = 30000;
     var liveMode = false;
+    // Server-rendered fallback baked in at page-generation time (or null). This
+    // is what rsync'd remote copies show, since they can't reach /api/last_qso.
+    var current = {last_qso_json};
 
     function pad2(n) {{ return (n < 10 ? '0' : '') + n; }}
     function fmtTimeZ(ts) {{
@@ -1232,14 +1274,16 @@ def write_index_html(image_dir):
       return Math.floor(secs / 3600) + 'h ago';
     }}
 
-    function render(data) {{
-      if (!data || !data.last_qso) {{
+    function render() {{
+      if (!current) {{
         el.textContent = 'no QSOs yet';
         el.className = 'last-qso-line stale';
         return;
       }}
-      var q = data.last_qso;
-      var serverNow = (data && data.server_time) || Math.floor(Date.now() / 1000);
+      var q = current;
+      // Anchor to the Pi's clock via clockSkewMs when a live poll has set it;
+      // otherwise (static rsync'd copy) fall back to the viewer's browser clock.
+      var serverNow = Math.floor((Date.now() + clockSkewMs) / 1000);
       var age = Math.max(0, serverNow - (q.timestamp || serverNow));
       // Freshness classes: fresh < 30s, warm < 300s (5 min), stale beyond.
       var ageClass = 'fresh';
@@ -1289,7 +1333,8 @@ def write_index_html(image_dir):
       }}).then(function(data) {{
         noteServerTime(data);
         liveMode = true;
-        render(data);
+        current = (data && data.last_qso) ? data.last_qso : null;
+        render();
         setTimeout(poll, pollMs);
       }}).catch(function() {{
         if (timeoutId) clearTimeout(timeoutId);
@@ -1297,7 +1342,9 @@ def write_index_html(image_dir):
       }});
     }}
 
-    poll();
+    render();                 // paint the baked-in fallback immediately
+    setInterval(render, 1000); // keep the "ago" age ticking on static copies too
+    poll();                    // upgrade to live data when the API is reachable
   }})();
 
   // --- Live new-ops polling --------------------------------------------
