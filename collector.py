@@ -487,6 +487,19 @@ def message_processor(q, event):
         stations = Stations(db, cursor)
         parser = N1mmMessageParser()
         hooks = EventHooks(config)
+        # Seed the operator/band baseline from the QSO log so a restart doesn't
+        # swallow the next real operator/band change (otherwise the first QSO
+        # after every restart is treated as "first seen" and fires nothing).
+        if hooks.enabled:
+            seeded = 0
+            for st, op, bid in dataaccess.get_last_operator_band_per_station(cursor):
+                if bid is not None and 0 <= bid < constants.Bands.count():
+                    label = constants.Bands.BANDS_TITLE[bid]
+                else:
+                    label = ''
+                hooks.prime_station((st or '').upper(), (op or '').upper(), label)
+                seeded += 1
+            logging.info('Seeded event-hook operator/band baseline for %d station(s)', seeded)
 
         thread_run = True
         while not event.is_set() and thread_run:

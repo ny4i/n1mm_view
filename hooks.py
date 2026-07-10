@@ -101,6 +101,17 @@ class EventHooks:
             return None
         return path
 
+    def prime_station(self, station, operator, band):
+        """Seed the last-seen operator/band for a station from persisted QSO
+        history, so operator_change / band_change survive a collector restart.
+
+        Called once at startup per station. After this, the first post-restart
+        QSO is compared against the real prior state instead of an empty one --
+        a genuine change still fires, while the common "same op keeps going"
+        case correctly stays silent.
+        """
+        self._last[station or ''] = {'operator': operator, 'band': band}
+
     def on_contact(self, fields):
         """
         Evaluate one recorded QSO for events and fire any matching hooks.

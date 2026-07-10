@@ -527,6 +527,29 @@ def count_distinct_mults(cursor, mults_mode, band_id=None):
         return 0
 
 
+def get_last_operator_band_per_station(cursor):
+    """Return [(station_name, operator_name, band_id), ...] for the most recent
+    QSO at each station.
+
+    Used to seed the event-hook operator/band baseline when the collector starts,
+    so a restart mid-contest doesn't swallow the next genuine operator/band change
+    (with an empty baseline the first post-restart QSO can only set it, not detect
+    a change). Returns [] on any error.
+    """
+    try:
+        cursor.execute(
+            'SELECT s.name, o.name, q.band_id '
+            'FROM qso_log q '
+            'JOIN station s ON s.id = q.station_id '
+            'JOIN operator o ON o.id = q.operator_id '
+            'JOIN (SELECT station_id, MAX(timestamp) AS mt FROM qso_log GROUP BY station_id) last '
+            '  ON last.station_id = q.station_id AND last.mt = q.timestamp;')
+        return cursor.fetchall()
+    except Exception:
+        logging.exception('get_last_operator_band_per_station failed')
+        return []
+
+
 def get_last_qso(cursor):
     cursor.execute('SELECT timestamp, callsign, exchange, section, operator.name, band_id \n'
                    'FROM qso_log JOIN operator WHERE operator.id = operator_id \n'
