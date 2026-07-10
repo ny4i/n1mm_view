@@ -220,7 +220,7 @@ YOY_EVENT_REGEX = ARRL.?FD
 [HOOKS]
 ; Run an external script when a contest event happens. Point an event at a
 ; script and the collector executes it on that event. Leave a value blank to
-; not hook that event. Typical use: light up a VersaBoard / send a message /
+; not hook that event. Typical use: light up a Vestaboard / send a message /
 ; play a sound when you work a new multiplier.
 ;
 ; SAFETY: scripts are run directly as a program with an argument list --
@@ -231,7 +231,7 @@ YOY_EVENT_REGEX = ARRL.?FD
 ; first argument ($1). In your own script, still quote your variables
 ; ("$N1MMV_NEW_CALL", not $N1MMV_NEW_CALL) and never eval them.
 ;
-; The script must be executable:  chmod +x /home/pi/projects/versa/notify.sh
+; The script must be executable:  chmod +x /home/pi/n1mm_view/examples/vesta_hook.sh
 ;
 ; Environment variables available to every hook (empty when not applicable):
 ;   N1MMV_EVENT             new_multiplier | operator_change | band_change  (= $1)
@@ -256,7 +256,7 @@ YOY_EVENT_REGEX = ARRL.?FD
 ; operator_change and band_change fire on the first QSO after the change at a
 ; given station (they are detected from the QSO stream, not from radio tuning).
 ;
-;NEW_MULTIPLIER_SCRIPT = /home/pi/projects/versa/notify.sh
+;NEW_MULTIPLIER_SCRIPT = /home/pi/n1mm_view/examples/vesta_hook.sh
 ;OPERATOR_CHANGE_SCRIPT =
 ;BAND_CHANGE_SCRIPT =
 ;

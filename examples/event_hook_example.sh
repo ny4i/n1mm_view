@@ -42,13 +42,14 @@ esac
 # 1) Log it (handy for testing that the hook fires).
 printf '%s  %s\n' "$(date -u '+%Y-%m-%d %H:%M:%SZ')" "$MSG" >> "$LOG"
 
-# 2) Do something with it. Replace this with your VersaBoard call, e.g.:
-#      "${HOME}/projects/versa/send.py" --message "$MSG"
+# 2) Do something with it. Replace this with your Vestaboard call, e.g.:
+#      "${HOME}/vesta/vesta" "$MSG"
 # The message is already assembled from the (untrusted-but-inert) env values.
+# (See vesta_hook.sh in this directory for a worked Vestaboard example.)
 #
 # Example placeholder -- only acts on the new-multiplier event:
 # if [ "$EVENT" = "new_multiplier" ]; then
-#     "${HOME}/projects/versa/send.py" --message "$MSG"
+#     "${HOME}/vesta/vesta" "$MSG"
 # fi
 
 exit 0
