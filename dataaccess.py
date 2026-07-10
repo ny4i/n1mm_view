@@ -308,7 +308,7 @@ def record_contact_combined(db, cursor, operators, stations,
         if operator_id is None: reasons.append(f'unknown operator {operator!r}')
         if station_id is None: reasons.append(f'unknown station {station!r}')
         logging.warning('cannot log QSO %s (call=%s): %s', qso_id, callsign, '; '.join(reasons))
-        return
+        return False
     try:
         cursor.execute(
             'insert or replace into qso_log \n'
@@ -320,8 +320,10 @@ def record_contact_combined(db, cursor, operators, stations,
              ituzone or None, cqzone or None, prefix, grid, comment, str(qso_id)))
 
         db.commit()
+        return True
     except Exception as err:
         logging.warning('Insert Failed: %s\nError: %s' % (qso_id, str(err)))
+        return False
 
 
 def record_contact(db, cursor, operators, stations,
@@ -460,6 +462,69 @@ def _exclude_clause(cursor, prefix=' WHERE '):
     if not conds:
         return ''
     return prefix + ' AND '.join(conds)
+
+
+# Maps a config.MULTS mode to the qso_log column that stores that multiplier's
+# value. Used by the event-hook "new multiplier" detection. The values here are
+# a fixed whitelist -- never user input -- so interpolating them into SQL below
+# is safe.
+_MULT_COLUMN = {
+    'SECTIONS': 'section',
+    'STATES': 'state',
+    'ITUZONES': 'ituzone',
+    'CQZONES': 'cqzone',
+    'GRID': 'grid',
+}
+
+
+def mult_value_exists(cursor, mults_mode, value, band_id=None):
+    """Return True if a QSO with this multiplier value already exists.
+
+    Used before inserting a contact to decide whether it is the first time this
+    multiplier has been worked. When band_id is given the check is per-band
+    (for contests that score a multiplier once per band); otherwise it is a
+    single distinct-value check matching the dashboard's multiplier count.
+
+    Fails safe: on any error it returns True (assume already worked) so a DB
+    hiccup never produces a spurious "new multiplier" notification.
+    """
+    col = _MULT_COLUMN.get(mults_mode)
+    if not col or value in (None, ''):
+        return False
+    sql = 'SELECT 1 FROM qso_log WHERE %s = ?' % col
+    params = [value]
+    if band_id is not None:
+        sql += ' AND band_id = ?'
+        params.append(band_id)
+    sql += ' LIMIT 1;'
+    try:
+        cursor.execute(sql, params)
+        return cursor.fetchone() is not None
+    except Exception:
+        logging.exception('mult_value_exists failed')
+        return True
+
+
+def count_distinct_mults(cursor, mults_mode, band_id=None):
+    """Return the number of distinct multiplier values worked so far.
+
+    Optionally scoped to a single band. Returns 0 on any error.
+    """
+    col = _MULT_COLUMN.get(mults_mode)
+    if not col:
+        return 0
+    sql = "SELECT COUNT(DISTINCT %s) FROM qso_log WHERE %s IS NOT NULL AND %s != ''" % (col, col, col)
+    params = []
+    if band_id is not None:
+        sql += ' AND band_id = ?'
+        params.append(band_id)
+    try:
+        cursor.execute(sql, params)
+        row = cursor.fetchone()
+        return row[0] if row and row[0] is not None else 0
+    except Exception:
+        logging.exception('count_distinct_mults failed')
+        return 0
 
 
 def get_last_qso(cursor):

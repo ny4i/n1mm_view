@@ -5,6 +5,7 @@ This program collects N1MM+ "Contact Info" broadcasts and saves data from the br
 in database tables.
 """
 
+import calendar
 import hashlib
 import logging
 import multiprocessing
@@ -16,6 +17,7 @@ import xml.parsers.expat
 from config import Config
 import constants
 import dataaccess
+from hooks import EventHooks
 
 __author__ = 'Jeffrey B. Otterson, N1KDO'
 __copyright__ = 'Copyright 2016, 2017, 2019, 2024 Jeffrey B. Otterson'
@@ -158,7 +160,7 @@ def convert_timestamp(s):
 _dropped_apps_logged = set()
 
 
-def process_message(parser, db, cursor, operators, stations, message, seen, src_addr=None):
+def process_message(parser, db, cursor, operators, stations, message, seen, src_addr=None, hooks=None):
     """
     Process a N1MM+ contactinfo message.
 
@@ -203,7 +205,7 @@ def process_message(parser, db, cursor, operators, stations, message, seen, src_
     # spells the root element differently (e.g. <Radioinfo>) is still handled.
     mt = message_type.lower()
     if mt in ('contactinfo', 'contactreplace'):
-        _process_contact(data, db, cursor, operators, stations)
+        _process_contact(data, db, cursor, operators, stations, hooks)
     elif mt == 'radioinfo':
         _process_radio_info(data, db, cursor, src_addr)
     elif mt == 'contactdelete':
@@ -215,7 +217,7 @@ def process_message(parser, db, cursor, operators, stations, message, seen, src_
         logging.debug(message)
 
 
-def _process_contact(data, db, cursor, operators, stations):
+def _process_contact(data, db, cursor, operators, stations, hooks=None):
     """Process a contactinfo or contactreplace message with validation."""
     qso_id = data.get('ID', '')
 
@@ -329,11 +331,53 @@ def _process_contact(data, db, cursor, operators, stations):
     else:
         state = ''
 
-    dataaccess.record_contact_combined(db, cursor, operators, stations,
+    # Event-hook multiplier detection: decide (before the insert) whether this
+    # QSO brings in a multiplier value we haven't worked yet. Only done when a
+    # hook is actually configured, so there is zero extra DB work otherwise.
+    hooks_active = hooks is not None and getattr(hooks, 'enabled', False)
+    mult_type = config.MULTS
+    mult_value = {'SECTIONS': section, 'STATES': state, 'ITUZONES': ituzone,
+                  'CQZONES': cqzone, 'GRID': grid}.get(config.MULTS, '')
+    band_id = constants.Bands.get_band_number(band)
+    # Friendly band label for notifications ('20M' rather than the raw '14').
+    if band_id is not None and 0 <= band_id < constants.Bands.count():
+        band_label = constants.Bands.BANDS_TITLE[band_id]
+    else:
+        band_label = band or ''
+    mult_is_new = False
+    if hooks_active:
+        per_band_id = band_id if hooks.mult_per_band else None
+        mult_is_new = bool(mult_value) and not dataaccess.mult_value_exists(
+            cursor, config.MULTS, mult_value, per_band_id)
+
+    recorded = dataaccess.record_contact_combined(db, cursor, operators, stations,
                                        timestamp, mycall, band, mode, operator, station,
                                        rx_freq, tx_freq, callsign, rst_sent, rst_recv,
                                        exchange, section, comment, qso_id, state=state,
                                        ituzone=ituzone, cqzone=cqzone, prefix=prefix, grid=grid)
+
+    # Report the recorded QSO to the event-hook dispatcher, which detects
+    # operator/band changes and fires the appropriate external script(s).
+    if hooks_active and recorded:
+        per_band_id = band_id if hooks.mult_per_band else None
+        hooks.on_contact({
+            'timestamp': calendar.timegm(timestamp),
+            'station': station,
+            'operator': operator,
+            'callsign': callsign,
+            'mycall': mycall,
+            'band': band_label,
+            'mode': mode,
+            'freq': rx_freq,
+            'section': section,
+            'exchange': exchange,
+            'mult_type': mult_type,
+            'mult_name': constants.get_mult_name(),
+            'mult_value': mult_value,
+            'mult_is_new': mult_is_new,
+            'mult_count': dataaccess.count_distinct_mults(cursor, config.MULTS, per_band_id),
+            'qso_count': dataaccess.get_qso_count(cursor),
+        })
 
     # Fallback radio display: keep the station visible on the radio panel from
     # its QSO traffic even if its RadioInfo broadcasts aren't being received.
@@ -442,13 +486,14 @@ def message_processor(q, event):
         operators = Operators(db, cursor)
         stations = Stations(db, cursor)
         parser = N1mmMessageParser()
+        hooks = EventHooks(config)
 
         thread_run = True
         while not event.is_set() and thread_run:
             try:
                 udp_data, src_addr = q.get()
                 message_count += 1
-                process_message(parser, db, cursor, operators, stations, udp_data, seen, src_addr)
+                process_message(parser, db, cursor, operators, stations, udp_data, seen, src_addr, hooks)
             except KeyboardInterrupt:
                 logging.debug('message processor stopping due to keyboard interrupt')
                 thread_run = False

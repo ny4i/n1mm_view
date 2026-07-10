@@ -286,3 +286,19 @@ class Config(metaclass = Singleton):
 
         logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, HQ_STATIONS=%s, WRTC=%s, OPERATOR_LEADERBOARD=%s, QSOS_BY_STATION=%s, QSOS_BY_CLASS=%s, QSOS_BY_CATEGORY=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
                      self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_HQ_STATIONS, self.SHOW_WRTC, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_QSOS_BY_STATION, self.SHOW_QSOS_BY_CLASS, self.SHOW_QSOS_BY_CATEGORY, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)
+
+        # [HOOKS] external event scripts. When a script path is set, the collector
+        # runs it (as an argv-list subprocess, never via a shell) on the matching
+        # event, passing all event data as N1MMV_* environment variables. Empty =
+        # that event is not hooked. See n1mm_view.ini.sample for the full field
+        # list and an example script.
+        self.HOOK_NEW_MULTIPLIER_SCRIPT = cfg.get('HOOKS', 'NEW_MULTIPLIER_SCRIPT', fallback='').strip()
+        self.HOOK_OPERATOR_CHANGE_SCRIPT = cfg.get('HOOKS', 'OPERATOR_CHANGE_SCRIPT', fallback='').strip()
+        self.HOOK_BAND_CHANGE_SCRIPT = cfg.get('HOOKS', 'BAND_CHANGE_SCRIPT', fallback='').strip()
+        # Seconds before a runaway hook script is killed.
+        self.HOOK_TIMEOUT = cfg.getint('HOOKS', 'TIMEOUT', fallback=10)
+        # Cap on concurrently-running hook processes (event-storm protection).
+        self.HOOK_MAX_CONCURRENT = cfg.getint('HOOKS', 'MAX_CONCURRENT', fallback=4)
+        # Count a multiplier as "new" per-band (True) or once overall (False,
+        # the default, matching the dashboard's distinct-value multiplier count).
+        self.HOOK_MULT_PER_BAND = cfg.getboolean('HOOKS', 'MULT_PER_BAND', fallback=False)

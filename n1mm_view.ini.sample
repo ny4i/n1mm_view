@@ -216,3 +216,55 @@ YOY_EVENT_REGEX = ARRL.?FD
 ;    sits on "Connecting…" forever, the fallback link is your way in.
 ;ClubLog Livestream = https://clublog.org/livestream/W4TA
 ;Solar Conditions = https://www.hamqsl.com/solar.html
+
+[HOOKS]
+; Run an external script when a contest event happens. Point an event at a
+; script and the collector executes it on that event. Leave a value blank to
+; not hook that event. Typical use: light up a VersaBoard / send a message /
+; play a sound when you work a new multiplier.
+;
+; SAFETY: scripts are run directly as a program with an argument list --
+; NEVER through a shell -- so a worked callsign or exchange containing shell
+; metacharacters (e.g. "; rm -rf ~") is passed as one inert string and can
+; never be executed. All event data is delivered as N1MMV_* environment
+; variables (like CGI / $_SERVER), and the event name is also passed as the
+; first argument ($1). In your own script, still quote your variables
+; ("$N1MMV_NEW_CALL", not $N1MMV_NEW_CALL) and never eval them.
+;
+; The script must be executable:  chmod +x /home/pi/projects/versa/notify.sh
+;
+; Environment variables available to every hook (empty when not applicable):
+;   N1MMV_EVENT             new_multiplier | operator_change | band_change  (= $1)
+;   N1MMV_TIMESTAMP         QSO time, unix epoch seconds (UTC)
+;   N1MMV_STATION           logging station name (e.g. RADIO1)
+;   N1MMV_CURRENT_OPERATOR  operator of this QSO
+;   N1MMV_PREVIOUS_OPERATOR prior operator at this station (operator_change)
+;   N1MMV_NEW_CALL          callsign just worked
+;   N1MMV_MYCALL            your station callsign
+;   N1MMV_BAND              band label (e.g. 20M)
+;   N1MMV_PREVIOUS_BAND     prior band at this station (band_change)
+;   N1MMV_MODE              CW | PHONE | DATA (etc.)
+;   N1MMV_FREQ              RX frequency in Hz
+;   N1MMV_SECTION           section/state exchange field
+;   N1MMV_EXCHANGE          received exchange
+;   N1MMV_MULT_TYPE         SECTIONS | STATES | ITUZONES | CQZONES | GRID
+;   N1MMV_MULT_NAME         friendly noun: Sections | States | Zones | Grids
+;   N1MMV_NEW_MULTIPLIER    the multiplier value worked (new_multiplier)
+;   N1MMV_MULT_COUNT        total distinct multipliers worked so far
+;   N1MMV_QSO_COUNT         running total QSO count (dupes excluded)
+;
+; operator_change and band_change fire on the first QSO after the change at a
+; given station (they are detected from the QSO stream, not from radio tuning).
+;
+;NEW_MULTIPLIER_SCRIPT = /home/pi/projects/versa/notify.sh
+;OPERATOR_CHANGE_SCRIPT =
+;BAND_CHANGE_SCRIPT =
+;
+; Seconds before a runaway hook script is killed (default 10).
+;TIMEOUT = 10
+; Max hook scripts allowed to run at once; extra events are dropped with a log
+; warning rather than piling up during a pileup (default 4).
+;MAX_CONCURRENT = 4
+; Count a multiplier as new per-band (true) or once overall (false, default --
+; matches the dashboard's distinct-value multiplier count).
+;MULT_PER_BAND = false
