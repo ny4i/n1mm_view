@@ -252,6 +252,7 @@ YOY_EVENT_REGEX = ARRL.?FD
 ;   N1MMV_NEW_MULTIPLIER    the multiplier value worked (new_multiplier)
 ;   N1MMV_MULT_COUNT        total distinct multipliers worked so far
 ;   N1MMV_QSO_COUNT         running total QSO count (dupes excluded)
+;   N1MMV_OPERATOR_QSO_COUNT  QSOs by the current operator (dupes excluded)
 ;
 ; operator_change and band_change fire on the first QSO after the change at a
 ; given station (they are detected from the QSO stream, not from radio tuning).

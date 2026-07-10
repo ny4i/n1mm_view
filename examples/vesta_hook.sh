@@ -19,18 +19,17 @@ set -uo pipefail
 VESTA=/home/pi/vesta/vesta
 EVENT="${1:-${N1MMV_EVENT:-}}"
 
-# Running QSO total for the spare third line. It's passed as a single
-# "QSOs:NNN" token (no space) on purpose: the board greedy-wraps and centers
-# on whitespace, and keeping the colon+number as one word makes it drop to its
-# own line rather than splitting "QSOs:" from the number.
-QSOS="QSOs:${N1MMV_QSO_COUNT}"
-
+# Third-line QSO tally, passed as a single "QSOs:NNN" token (no space) on
+# purpose: the board greedy-wraps/centers on whitespace, so keeping the
+# colon+number as one word makes it drop to its own line instead of splitting
+# "QSOs:" from the number. Operator change shows THAT operator's own total;
+# a new multiplier shows the site-wide total.
 case "$EVENT" in
   operator_change)
-    "$VESTA" New Operator "$N1MMV_CURRENT_OPERATOR" "$QSOS"
+    "$VESTA" New Operator "$N1MMV_CURRENT_OPERATOR" "QSOs:${N1MMV_OPERATOR_QSO_COUNT}"
     ;;
   new_multiplier)
-    "$VESTA" New Multiplier Zone "$N1MMV_NEW_MULTIPLIER" "$QSOS"
+    "$VESTA" New Multiplier Zone "$N1MMV_NEW_MULTIPLIER" "QSOs:${N1MMV_QSO_COUNT}"
     ;;
   *)
     # Not an event we post to the board; ignore quietly.

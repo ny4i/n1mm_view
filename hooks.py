@@ -177,6 +177,7 @@ class EventHooks:
         put('NEW_MULTIPLIER', f.get('mult_value', ''))
         put('MULT_COUNT', f.get('mult_count', ''))
         put('QSO_COUNT', f.get('qso_count', ''))
+        put('OPERATOR_QSO_COUNT', f.get('operator_qso_count', ''))
         return env
 
     def _run(self, event, path, env):

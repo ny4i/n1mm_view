@@ -377,6 +377,7 @@ def _process_contact(data, db, cursor, operators, stations, hooks=None):
             'mult_is_new': mult_is_new,
             'mult_count': dataaccess.count_distinct_mults(cursor, config.MULTS, per_band_id),
             'qso_count': dataaccess.get_qso_count(cursor),
+            'operator_qso_count': dataaccess.get_operator_qso_count(cursor, operator),
         })
 
     # Fallback radio display: keep the station visible on the radio panel from

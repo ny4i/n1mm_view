@@ -550,6 +550,25 @@ def get_last_operator_band_per_station(cursor):
         return []
 
 
+def get_operator_qso_count(cursor, operator_name):
+    """Return the number of QSOs logged by the given operator (dupes/own-effort
+    excluded, matching get_qso_count). Used for the event-hook per-operator
+    tally. Returns 0 on any error or blank operator.
+    """
+    if not operator_name:
+        return 0
+    try:
+        sql = ('SELECT COUNT(*) FROM qso_log q '
+               'JOIN operator o ON o.id = q.operator_id '
+               'WHERE o.name = ?') + _exclude_clause(cursor, prefix=' AND ')
+        cursor.execute(sql, (operator_name,))
+        row = cursor.fetchone()
+        return row[0] if row else 0
+    except Exception:
+        logging.exception('get_operator_qso_count failed')
+        return 0
+
+
 def get_last_qso(cursor):
     cursor.execute('SELECT timestamp, callsign, exchange, section, operator.name, band_id \n'
                    'FROM qso_log JOIN operator WHERE operator.id = operator_id \n'
