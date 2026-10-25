@@ -161,6 +161,9 @@ def create_images(size, image_dir, last_qso_timestamp):
         # load IARU HQ-station multiplier counts (independent of the zone map)
         qsos_by_hq = dataaccess.get_qsos_by_hq(cursor) if config.SHOW_HQ_STATIONS else {}
 
+        # load DXCC countries worked (CQ WW second multiplier)
+        qsos_by_country = dataaccess.get_qsos_by_country(cursor) if config.SHOW_COUNTRIES else []
+
         # load the WRTC special-callsign roster + worked counts. The roster file
         # is re-read every cycle so calls issued mid-event show up without a
         # restart; qsos_by_wrtc is the subset of that roster found in the log.
@@ -263,6 +266,14 @@ def create_images(size, image_dir, last_qso_timestamp):
             if image_data is not None:
                 filename = makePNGTitle(image_dir, 'hq_stations')
                 graphics.save_image(image_data, image_size, filename)
+        except Exception as e:
+            logging.exception(e)
+
+    if config.SHOW_COUNTRIES:
+        try:
+            image_data, image_size = graphics.draw_countries_worked(size, qsos_by_country)
+            # Blank placeholder until the first country is logged.
+            save_chart(image_dir, 'countries_worked', image_data, image_size, size, 'Countries Worked')
         except Exception as e:
             logging.exception(e)
 
@@ -459,6 +470,8 @@ def write_index_html(image_dir):
         slides.append((f'{mult_name} Remaining', 'mults_remaining.png', 'img'))
     if config.SHOW_HQ_STATIONS:
         slides.append(('HQ Stations Worked', 'hq_stations.png', 'img'))
+    if config.SHOW_COUNTRIES:
+        slides.append(('Countries Worked', 'countries_worked.png', 'img'))
     if config.SHOW_WRTC:
         slides.append(('WRTC Stations Worked', 'wrtc_stations.png', 'img'))
     if config.SHOW_OPERATOR_LEADERBOARD:

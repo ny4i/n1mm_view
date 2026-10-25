@@ -861,3 +861,34 @@ class TestProcessMessageMalformed:
         process_message(parser, conn, cursor, operators, stations, xml, seen)
         cursor.execute('SELECT COUNT(*) FROM qso_log')
         assert cursor.fetchone()[0] == 0
+
+
+class TestProcessContactCountry:
+    """The logger's <countryprefix>/<continent> are stored on every QSO."""
+
+    def test_country_and_continent_recorded(self, test_db):
+        conn, cursor, operators, stations, parser, seen = test_db
+        xml = b'''<contactinfo>
+            <app>TR4W</app>
+            <contestname>CQ-WW-SSB</contestname>
+            <timestamp>2026-10-24 15:25:08</timestamp>
+            <mycall>NY4I</mycall>
+            <band>28</band>
+            <rxfreq>2850000</rxfreq>
+            <txfreq>2850000</txfreq>
+            <operator>NY4I</operator>
+            <mode>USB</mode>
+            <call>CR6K</call>
+            <countryprefix>ct</countryprefix>
+            <continent>EU</continent>
+            <snt>59</snt>
+            <rcv>59</rcv>
+            <exchange1>59 14</exchange1>
+            <zone>14</zone>
+            <StationName>Radio1</StationName>
+            <contestnr>32</contestnr>
+            <ID>2587aff6a52648e19998a932645498c9</ID>
+        </contactinfo>'''
+        process_message(parser, conn, cursor, operators, stations, xml, seen)
+        cursor.execute('SELECT callsign, country, continent FROM qso_log')
+        assert cursor.fetchone() == ('CR6K', 'CT', 'EU')

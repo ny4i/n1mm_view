@@ -227,6 +227,10 @@ class Config(metaclass = Singleton):
         # the ITU-zone map -- HQ stations are a second IARU multiplier, logged as
         # a society abbreviation in the section field. Only meaningful for IARU.
         self.SHOW_HQ_STATIONS = cfg.getboolean('FEATURES', 'SHOW_HQ_STATIONS', fallback=False)
+        # DX contests (e.g. CQ WW): slide listing the DXCC countries worked,
+        # grouped by continent. Independent of MULTS -- countries are a second
+        # multiplier alongside the zone map.
+        self.SHOW_COUNTRIES = cfg.getboolean('FEATURES', 'SHOW_COUNTRIES', fallback=False)
 
         # IARU HF only: WRTC ("World Radiosport Team Championship") is a
         # once-every-four-years "contest within the contest" -- ~50 teams issued
@@ -284,8 +288,8 @@ class Config(metaclass = Singleton):
         if self.EXTERNAL_SLIDES:
             logging.info('External slides: %s', [t for t, _ in self.EXTERNAL_SLIDES])
 
-        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, HQ_STATIONS=%s, WRTC=%s, OPERATOR_LEADERBOARD=%s, QSOS_BY_STATION=%s, QSOS_BY_CLASS=%s, QSOS_BY_CATEGORY=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
-                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_HQ_STATIONS, self.SHOW_WRTC, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_QSOS_BY_STATION, self.SHOW_QSOS_BY_CLASS, self.SHOW_QSOS_BY_CATEGORY, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)
+        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, HQ_STATIONS=%s, COUNTRIES=%s, WRTC=%s, OPERATOR_LEADERBOARD=%s, QSOS_BY_STATION=%s, QSOS_BY_CLASS=%s, QSOS_BY_CATEGORY=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
+                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_HQ_STATIONS, self.SHOW_COUNTRIES, self.SHOW_WRTC, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_QSOS_BY_STATION, self.SHOW_QSOS_BY_CLASS, self.SHOW_QSOS_BY_CATEGORY, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)
 
         # [HOOKS] external event scripts. When a script path is set, the collector
         # runs it (as an argv-list subprocess, never via a shell) on the matching

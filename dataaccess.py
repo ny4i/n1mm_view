@@ -107,6 +107,21 @@ def create_tables(db, cursor):
         except Exception:
             pass  # column already exists
 
+    # Migration: add the worked station's DXCC country prefix (e.g. 'K', 'KH6',
+    # 'CT3') and continent ('NA', 'EU', ...), as sent by the logger in
+    # <countryprefix>/<continent>. Recorded for every QSO regardless of MULTS,
+    # since countries are a second multiplier in DX contests such as CQ WW.
+    # Added by migration only (appended after own_effort) so new and migrated
+    # databases share one column order.
+    for col, coldef in (('country', 'country char(8)'),
+                        ('continent', 'continent char(2)')):
+        try:
+            cursor.execute('ALTER TABLE qso_log ADD COLUMN %s;' % coldef)
+            db.commit()
+            logging.info('Added %s column to qso_log table', col)
+        except Exception:
+            pass  # column already exists
+
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_band_id ON qso_log(band_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_mode_id ON qso_log(mode_id);')
     cursor.execute('CREATE INDEX IF NOT EXISTS qso_log_operator_id ON qso_log(operator_id);')
@@ -285,7 +300,8 @@ def record_contact_combined(db, cursor, operators, stations,
                             timestamp, mycall, band, mode, operator, station,
                             rx_freq, tx_freq, callsign, rst_sent, rst_recv,
                             exchange, section, comment, qso_id, state='',
-                            ituzone='', cqzone='', prefix='', grid=''):
+                            ituzone='', cqzone='', prefix='', grid='',
+                            country='', continent=''):
     """
     record the results of a contact_message
     """
@@ -313,11 +329,12 @@ def record_contact_combined(db, cursor, operators, stations,
         cursor.execute(
             'insert or replace into qso_log \n'
             '    (timestamp, mycall, band_id, mode_id, operator_id, station_id , rx_freq, tx_freq, \n'
-            '     callsign, rst_sent, rst_recv, exchange, section, state, ituzone, cqzone, prefix, grid, comment, qso_id)\n'
-            '    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
+            '     callsign, rst_sent, rst_recv, exchange, section, state, ituzone, cqzone, prefix, grid,\n'
+            '     country, continent, comment, qso_id)\n'
+            '    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
             (calendar.timegm(timestamp), mycall, band_id, mode_id, operator_id, station_id, rx_freq, tx_freq,
              callsign, rst_sent, rst_recv, exchange, section, state,
-             ituzone or None, cqzone or None, prefix, grid, comment, str(qso_id)))
+             ituzone or None, cqzone or None, prefix, grid, country, continent, comment, str(qso_id)))
 
         db.commit()
         return True
@@ -787,6 +804,30 @@ def get_qsos_by_grid(cursor):
         qsos_by_grid[row[0]] = row[1]
         logging.debug(f'grid {row[0]} {row[1]}')
     return qsos_by_grid
+
+
+def get_qsos_by_country(cursor):
+    """QSO counts by DXCC country prefix, as a list of (country, continent, qsos)
+    tuples sorted by continent then country. Country and continent come straight
+    from the logger's <countryprefix>/<continent> fields; QSOs without a country
+    (older logs, loggers that don't send it) are skipped. A country's continent
+    is taken as the most common value logged for it, so one mis-tagged QSO can't
+    move it."""
+    logging.debug('Load QSOs by country')
+    cursor.execute("SELECT country, continent, COUNT(*) AS qsos FROM qso_log"
+                   " WHERE country IS NOT NULL AND country != ''"
+                   + _exclude_clause(cursor, ' AND ') +
+                   ' GROUP BY country, continent;')
+    countries = {}
+    for country, continent, qsos in cursor:
+        total, best_cont, best_n = countries.get(country, (0, '', 0))
+        if qsos > best_n:
+            best_cont, best_n = continent or '', qsos
+        countries[country] = (total + qsos, best_cont, best_n)
+    result = sorted(((c, cont, total) for c, (total, cont, _) in countries.items()),
+                    key=lambda r: (r[1], r[0]))
+    logging.debug(f'countries {result}')
+    return result
 
 
 def get_qsos_by_hq(cursor):

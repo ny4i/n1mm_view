@@ -134,6 +134,11 @@ SHOW_MULT_ALERT = False
 # Coexists with the ITU-zone map (MULTS = ITUZONES); leave False for other
 # contests.
 SHOW_HQ_STATIONS = False
+# DX contests (e.g. CQ WW): DXCC countries worked, grouped by continent. The
+# country prefix and continent come from the logger's <countryprefix> and
+# <continent> fields (its country file), recorded for every QSO. Coexists with
+# the zone map (MULTS = CQZONES).
+SHOW_COUNTRIES = False
 # IARU HF only: WRTC ("contest within the contest", every four years). ~50 teams
 # get special callsigns issued shortly before the start. This slide shows a
 # worked/total count with a progress bar over the roster of WRTC callsigns,

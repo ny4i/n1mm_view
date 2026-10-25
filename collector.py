@@ -312,6 +312,12 @@ def _process_contact(data, db, cursor, operators, stations, hooks=None):
     # Prefix multiplier (e.g. CQ WPX): TR4W/N1MM send the scored WPX prefix.
     prefix = data.get('wpxprefix', '').upper()
 
+    # DXCC country (e.g. 'K', 'KH6', 'CT3') and continent of the worked station,
+    # resolved by the logger from its country file. Stored for every QSO: CQ WW
+    # scores countries as a second multiplier alongside zones.
+    country = data.get('countryprefix', '').strip().upper()
+    continent = data.get('continent', '').strip().upper()
+
     # Zone multiplier: TR4W/N1MM carry a single <zone> field whose meaning is
     # contest-dependent -- the ITU zone for IARU HF, the CQ zone for CQ contests.
     # Route it to the matching column based on the configured multiplier type so
@@ -354,7 +360,8 @@ def _process_contact(data, db, cursor, operators, stations, hooks=None):
                                        timestamp, mycall, band, mode, operator, station,
                                        rx_freq, tx_freq, callsign, rst_sent, rst_recv,
                                        exchange, section, comment, qso_id, state=state,
-                                       ituzone=ituzone, cqzone=cqzone, prefix=prefix, grid=grid)
+                                       ituzone=ituzone, cqzone=cqzone, prefix=prefix, grid=grid,
+                                       country=country, continent=continent)
 
     # Report the recorded QSO to the event-hook dispatcher, which detects
     # operator/band changes and fires the appropriate external script(s).

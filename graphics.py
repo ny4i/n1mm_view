@@ -1335,6 +1335,115 @@ def draw_hq_stations(size, qsos_by_hq):
     return raw_data, result_size
 
 
+CONTINENT_NAMES = {
+    'NA': 'North America', 'SA': 'South America', 'EU': 'Europe',
+    'AF': 'Africa', 'AS': 'Asia', 'OC': 'Oceania', 'AN': 'Antarctica',
+}
+
+
+def draw_countries_worked(size, countries):
+    """
+    Draw the DXCC countries-worked chart: a title and total count, then the
+    worked country prefixes grouped under a header per continent.
+
+    countries is the list of (country, continent, qsos) tuples returned by
+    dataaccess.get_qsos_by_country. There is no fixed country roster to measure
+    against (the logger's country file decides what counts), so unlike the zone
+    charts this lists what is in the log rather than what remains.
+
+    Returns (raw_data, size) or (None, (0,0)) if no countries have been worked.
+    """
+    logging.debug('draw_countries_worked()')
+
+    if not countries:
+        return None, (0, 0)
+
+    # Group by continent in a fixed order; anything unrecognised goes last.
+    by_continent = {}
+    for country, continent, _qsos in countries:
+        by_continent.setdefault(continent or '', []).append(country)
+    order = [c for c in CONTINENT_NAMES if c in by_continent]
+    order += sorted(c for c in by_continent if c not in CONTINENT_NAMES)
+
+    padding = 20
+
+    title_font = bigger_font
+    title = 'Countries Worked'
+    title_height = title_font.get_height()
+
+    sub_font = view_font
+    sub_text = f'{len(countries)} countries worked'
+    sub_height = sub_font.get_height()
+
+    header_font = view_font
+    header_height = header_font.get_height() + 8
+
+    cell_font = view_font
+    cell_height = cell_font.get_height() + 8
+    max_code_width = max(cell_font.size(c[0])[0] for c in countries)
+    cell_width = max_code_width + 30
+    num_cols = 10
+    table_width = num_cols * cell_width
+
+    headers = {}
+    for cont in order:
+        name = CONTINENT_NAMES.get(cont, cont or 'Unknown')
+        headers[cont] = f'{name} ({len(by_continent[cont])})'
+
+    title_width = title_font.size(title)[0]
+    sub_width = sub_font.size(sub_text)[0]
+    header_width = max(header_font.size(h)[0] for h in headers.values())
+    content_width = max(title_width, sub_width, table_width, header_width)
+    surface_width = content_width + padding * 2
+
+    # Vertical layout: title, subtitle, then a header + prefix grid per continent.
+    y_cursor = padding
+    title_y = y_cursor
+    y_cursor += title_height + padding
+    sub_y = y_cursor
+    y_cursor += sub_height + padding
+    sections = []
+    for cont in order:
+        num_rows = (len(by_continent[cont]) + num_cols - 1) // num_cols
+        sections.append((cont, y_cursor))
+        y_cursor += header_height + num_rows * cell_height + padding
+    surface_height = y_cursor
+
+    surf = pygame.Surface((surface_width, surface_height))
+    surf.fill(BLACK)
+
+    title_surf = title_font.render(title, True, WHITE)
+    title_rect = title_surf.get_rect()
+    title_rect.centerx = surface_width // 2
+    title_rect.y = title_y
+    surf.blit(title_surf, title_rect)
+
+    sub_surf = sub_font.render(sub_text, True, CYAN)
+    sub_rect = sub_surf.get_rect()
+    sub_rect.centerx = surface_width // 2
+    sub_rect.y = sub_y
+    surf.blit(sub_surf, sub_rect)
+
+    start_x = (surface_width - table_width) // 2
+    for cont, section_y in sections:
+        header_surf = header_font.render(headers[cont], True, YELLOW)
+        surf.blit(header_surf, (start_x, section_y))
+        grid_y = section_y + header_height
+        for i, code in enumerate(by_continent[cont]):
+            x = start_x + (i % num_cols) * cell_width
+            y = grid_y + (i // num_cols) * cell_height
+            code_surf = cell_font.render(code, True, GREEN)
+            code_rect = code_surf.get_rect()
+            code_rect.centerx = x + cell_width // 2
+            code_rect.y = y
+            surf.blit(code_surf, code_rect)
+
+    result_size = surf.get_size()
+    raw_data = pygame.image.tostring(surf, image_format)
+    logging.debug('draw_countries_worked() done')
+    return raw_data, result_size
+
+
 def draw_wrtc_stations(size, qsos_by_wrtc, all_calls):
     """
     Draw the WRTC-station roster chart: a worked/total header with a progress

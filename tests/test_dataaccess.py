@@ -568,3 +568,64 @@ class TestEmptyDatabase:
         conn, cursor = db
         result = dataaccess.get_last_N_qsos(cursor, 10)
         assert result == []
+
+
+class TestCountries:
+    """Tests for the DXCC country/continent columns and get_qsos_by_country."""
+
+    def _record(self, conn, cursor, operators, stations, qso_id, call, band,
+                country, continent):
+        ts = time.strptime('2026-10-24 15:00:00', '%Y-%m-%d %H:%M:%S')
+        dataaccess.record_contact_combined(
+            conn, cursor, operators, stations,
+            timestamp=ts, mycall='NY4I', band=band, mode='USB',
+            operator='OP1', station='Station1',
+            rx_freq=14250000, tx_freq=14250000, callsign=call,
+            rst_sent='59', rst_recv='59', exchange='59 5', section='',
+            comment='', qso_id=qso_id, cqzone='5',
+            country=country, continent=continent)
+
+    def test_qso_log_has_country_columns(self, db):
+        conn, cursor = db
+        cursor.execute('PRAGMA table_info(qso_log);')
+        cols = [col[1] for col in cursor.fetchall()]
+        assert 'country' in cols
+        assert 'continent' in cols
+
+    def test_migration_adds_country_columns(self):
+        """A database created before the country columns gains them."""
+        conn = sqlite3.connect(':memory:')
+        cursor = conn.cursor()
+        cursor.execute('CREATE TABLE qso_log (timestamp INTEGER NOT NULL, mycall char(12),'
+                       ' band_id INTEGER, mode_id INTEGER, operator_id INTEGER,'
+                       ' station_id INTEGER, rx_freq INTEGER, tx_freq INTEGER,'
+                       ' callsign char(12), rst_sent char(3), rst_recv char(3),'
+                       ' exchange char(4), section char(4), comment TEXT,'
+                       ' qso_id char(32) PRIMARY KEY NOT NULL);')
+        dataaccess.create_tables(conn, cursor)
+        cursor.execute('PRAGMA table_info(qso_log);')
+        cols = [col[1] for col in cursor.fetchall()]
+        assert 'country' in cols and 'continent' in cols
+        conn.close()
+
+    def test_get_qsos_by_country(self, db_with_helpers):
+        conn, cursor, operators, stations = db_with_helpers
+        self._record(conn, cursor, operators, stations, 'q1', 'CR6K', '28', 'CT', 'EU')
+        self._record(conn, cursor, operators, stations, 'q2', 'N2IC', '21', 'K', 'NA')
+        self._record(conn, cursor, operators, stations, 'q3', 'K1AR', '14', 'K', 'NA')
+        self._record(conn, cursor, operators, stations, 'q4', 'CQ9A', '21', 'CT3', 'AF')
+        result = dataaccess.get_qsos_by_country(cursor)
+        # Sorted by continent, then country
+        assert result == [('CT3', 'AF', 1), ('CT', 'EU', 1), ('K', 'NA', 2)]
+
+    def test_get_qsos_by_country_skips_blank_and_majority_continent(self, db_with_helpers):
+        conn, cursor, operators, stations = db_with_helpers
+        self._record(conn, cursor, operators, stations, 'q1', 'W1AW', '14', '', '')
+        self._record(conn, cursor, operators, stations, 'q2', 'K1AR', '14', 'K', 'NA')
+        self._record(conn, cursor, operators, stations, 'q3', 'N2IC', '21', 'K', 'NA')
+        self._record(conn, cursor, operators, stations, 'q4', 'K3LR', '7', 'K', 'SA')
+        assert dataaccess.get_qsos_by_country(cursor) == [('K', 'NA', 3)]
+
+    def test_get_qsos_by_country_empty(self, db):
+        conn, cursor = db
+        assert dataaccess.get_qsos_by_country(cursor) == []
