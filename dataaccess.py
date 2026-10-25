@@ -544,6 +544,32 @@ def count_distinct_mults(cursor, mults_mode, band_id=None):
         return 0
 
 
+def get_mults_by_band(cursor, mults_mode, include_countries=False):
+    """Per-band QSO and multiplier counts, for contests that score each
+    multiplier once per band (e.g. CQ WW: zones + countries on every band).
+
+    Returns {band_id: {'qsos': n, 'mults': n, 'countries': n}} for each band
+    with at least one QSO. 'mults' is the distinct count of the configured
+    MULTS column on that band; 'countries' (distinct DXCC country prefixes) is
+    only filled when include_countries is set, else 0. Dupes and own-effort
+    QSOs are excluded, matching the other dashboard counts.
+    """
+    col = _MULT_COLUMN.get(mults_mode)
+    # NULLIF folds blank values (QSOs without that multiplier) into NULL so
+    # COUNT(DISTINCT ...) skips them. col comes from the fixed _MULT_COLUMN
+    # whitelist, so interpolating it is safe.
+    mult_expr = "COUNT(DISTINCT NULLIF(%s, ''))" % col if col else '0'
+    country_expr = "COUNT(DISTINCT NULLIF(country, ''))" if include_countries else '0'
+    cursor.execute('SELECT band_id, COUNT(*), %s, %s FROM qso_log' % (mult_expr, country_expr)
+                   + _exclude_clause(cursor) +
+                   ' GROUP BY band_id ORDER BY band_id;')
+    result = {}
+    for band_id, qsos, mults, countries in cursor:
+        result[band_id] = {'qsos': qsos, 'mults': mults, 'countries': countries}
+    logging.debug(f'mults by band {result}')
+    return result
+
+
 def get_last_operator_band_per_station(cursor):
     """Return [(station_name, operator_name, band_id), ...] for the most recent
     QSO at each station.

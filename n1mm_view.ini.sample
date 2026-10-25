@@ -139,6 +139,12 @@ SHOW_HQ_STATIONS = False
 # <continent> fields (its country file), recorded for every QSO. Coexists with
 # the zone map (MULTS = CQZONES).
 SHOW_COUNTRIES = False
+# Multipliers by Band table: QSOs and multipliers worked on each band, with a
+# per-band total and a Total row summing them. For contests that count each
+# multiplier once per band (CQ WW: zones + countries on every band). The
+# multiplier column follows MULTS; a Countries column is added when
+# SHOW_COUNTRIES is True.
+SHOW_MULTS_BY_BAND = False
 # IARU HF only: WRTC ("contest within the contest", every four years). ~50 teams
 # get special callsigns issued shortly before the start. This slide shows a
 # worked/total count with a progress bar over the roster of WRTC callsigns,

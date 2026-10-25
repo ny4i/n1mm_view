@@ -164,6 +164,10 @@ def create_images(size, image_dir, last_qso_timestamp):
         # load DXCC countries worked (CQ WW second multiplier)
         qsos_by_country = dataaccess.get_qsos_by_country(cursor) if config.SHOW_COUNTRIES else []
 
+        # load per-band multiplier counts (CQ WW scores each mult once per band)
+        mults_by_band = dataaccess.get_mults_by_band(cursor, config.MULTS, config.SHOW_COUNTRIES) \
+            if config.SHOW_MULTS_BY_BAND else {}
+
         # load the WRTC special-callsign roster + worked counts. The roster file
         # is re-read every cycle so calls issued mid-event show up without a
         # restart; qsos_by_wrtc is the subset of that roster found in the log.
@@ -266,6 +270,14 @@ def create_images(size, image_dir, last_qso_timestamp):
             if image_data is not None:
                 filename = makePNGTitle(image_dir, 'hq_stations')
                 graphics.save_image(image_data, image_size, filename)
+        except Exception as e:
+            logging.exception(e)
+
+    if config.SHOW_MULTS_BY_BAND:
+        try:
+            image_data, image_size = graphics.mults_by_band_table(
+                size, mults_by_band, constants.get_mult_name(), config.SHOW_COUNTRIES)
+            save_chart(image_dir, 'mults_by_band', image_data, image_size, size, 'Multipliers by Band')
         except Exception as e:
             logging.exception(e)
 
@@ -470,6 +482,8 @@ def write_index_html(image_dir):
         slides.append((f'{mult_name} Remaining', 'mults_remaining.png', 'img'))
     if config.SHOW_HQ_STATIONS:
         slides.append(('HQ Stations Worked', 'hq_stations.png', 'img'))
+    if config.SHOW_MULTS_BY_BAND:
+        slides.append(('Multipliers by Band', 'mults_by_band.png', 'img'))
     if config.SHOW_COUNTRIES:
         slides.append(('Countries Worked', 'countries_worked.png', 'img'))
     if config.SHOW_WRTC:

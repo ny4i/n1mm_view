@@ -484,6 +484,40 @@ def qso_summary_table(size, qso_band_modes):
     return draw_table(size, make_score_table(qso_band_modes), "QSOs Summary")
 
 
+def mults_by_band_table(size, mults_by_band, mult_name, include_countries=False):
+    """
+    create the Multipliers by Band table: one row per band with QSOs, giving
+    QSOs, the configured multiplier (e.g. Zones) and optionally Countries, with
+    a per-band multiplier total. The Total row sums the per-band counts, which
+    is the contest's multiplier for contests that count each multiplier once
+    per band (CQ WW: zones + countries on every band).
+    """
+    if not mults_by_band:
+        return None, (0, 0)
+
+    header = ['', 'QSOs', mult_name]
+    if include_countries:
+        header.append('Countries')
+    header.append('Mults')
+    cell_text = [header]
+
+    totals = [0] * (len(header) - 1)
+    for band_id in sorted(mults_by_band):
+        counts = mults_by_band[band_id]
+        values = [counts['qsos'], counts['mults']]
+        if include_countries:
+            values.append(counts['countries'])
+        values.append(sum(values[1:]))
+        if 0 <= band_id < Bands.count():
+            label = Bands.BANDS_TITLE[band_id]
+        else:
+            label = str(band_id)
+        cell_text.append(['%5s' % label] + ['%5d' % v for v in values])
+        totals = [t + v for t, v in zip(totals, values)]
+    cell_text.append(['Total'] + ['%5d' % v for v in totals])
+    return draw_table(size, cell_text, 'Multipliers by Band')
+
+
 def qso_rates_table(size, operator_qso_rates):
     """
     create the QSO Rates by Operator table

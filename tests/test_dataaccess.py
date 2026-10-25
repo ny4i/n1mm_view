@@ -629,3 +629,30 @@ class TestCountries:
     def test_get_qsos_by_country_empty(self, db):
         conn, cursor = db
         assert dataaccess.get_qsos_by_country(cursor) == []
+
+    def test_get_mults_by_band(self, db_with_helpers):
+        """Zones and countries count once per band; blanks are skipped."""
+        conn, cursor, operators, stations = db_with_helpers
+        # 20m: two zone-5 K QSOs (1 zone, 1 country) and a CT/zone-14 QSO
+        self._record(conn, cursor, operators, stations, 'q1', 'K1AR', '14', 'K', 'NA')
+        self._record(conn, cursor, operators, stations, 'q2', 'N2IC', '14', 'K', 'NA')
+        # 15m: the same K/zone 5 counts again on a new band, plus one with no country
+        self._record(conn, cursor, operators, stations, 'q3', 'K3LR', '21', 'K', 'NA')
+        self._record(conn, cursor, operators, stations, 'q4', 'W1AW', '21', '', '')
+        cursor.execute("UPDATE qso_log SET cqzone = 14 WHERE qso_id = 'q2'")
+        conn.commit()
+        result = dataaccess.get_mults_by_band(cursor, 'CQZONES', include_countries=True)
+        b20 = constants.Bands.get_band_number('14')
+        b15 = constants.Bands.get_band_number('21')
+        assert result[b20] == {'qsos': 2, 'mults': 2, 'countries': 1}
+        assert result[b15] == {'qsos': 2, 'mults': 1, 'countries': 1}
+
+    def test_get_mults_by_band_without_countries(self, db_with_helpers):
+        conn, cursor, operators, stations = db_with_helpers
+        self._record(conn, cursor, operators, stations, 'q1', 'K1AR', '14', 'K', 'NA')
+        result = dataaccess.get_mults_by_band(cursor, 'CQZONES')
+        assert list(result.values()) == [{'qsos': 1, 'mults': 1, 'countries': 0}]
+
+    def test_get_mults_by_band_empty(self, db):
+        conn, cursor = db
+        assert dataaccess.get_mults_by_band(cursor, 'CQZONES', True) == {}
