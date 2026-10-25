@@ -656,3 +656,14 @@ class TestCountries:
     def test_get_mults_by_band_empty(self, db):
         conn, cursor = db
         assert dataaccess.get_mults_by_band(cursor, 'CQZONES', True) == {}
+
+    def test_country_mult_exists_per_band(self, db_with_helpers):
+        """The hook's new-country check works overall and per band."""
+        conn, cursor, operators, stations = db_with_helpers
+        self._record(conn, cursor, operators, stations, 'q1', 'K1AR', '14', 'K', 'NA')
+        b20 = constants.Bands.get_band_number('14')
+        b15 = constants.Bands.get_band_number('21')
+        assert dataaccess.mult_value_exists(cursor, 'COUNTRIES', 'K')
+        assert dataaccess.mult_value_exists(cursor, 'COUNTRIES', 'K', b20)
+        assert not dataaccess.mult_value_exists(cursor, 'COUNTRIES', 'K', b15)
+        assert not dataaccess.mult_value_exists(cursor, 'COUNTRIES', 'VE')

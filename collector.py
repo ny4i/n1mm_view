@@ -351,10 +351,15 @@ def _process_contact(data, db, cursor, operators, stations, hooks=None):
     else:
         band_label = band or ''
     mult_is_new = False
+    country_is_new = False
     if hooks_active:
         per_band_id = band_id if hooks.mult_per_band else None
         mult_is_new = bool(mult_value) and not dataaccess.mult_value_exists(
             cursor, config.MULTS, mult_value, per_band_id)
+        # Countries are a second multiplier when SHOW_COUNTRIES is on (CQ WW).
+        if config.SHOW_COUNTRIES:
+            country_is_new = bool(country) and not dataaccess.mult_value_exists(
+                cursor, 'COUNTRIES', country, per_band_id)
 
     recorded = dataaccess.record_contact_combined(db, cursor, operators, stations,
                                        timestamp, mycall, band, mode, operator, station,
@@ -383,6 +388,8 @@ def _process_contact(data, db, cursor, operators, stations, hooks=None):
             'mult_value': mult_value,
             'mult_is_new': mult_is_new,
             'mult_count': dataaccess.count_distinct_mults(cursor, config.MULTS, per_band_id),
+            'country': country,
+            'country_is_new': country_is_new,
             'qso_count': dataaccess.get_qso_count(cursor),
             'operator_qso_count': dataaccess.get_operator_qso_count(cursor, operator),
         })

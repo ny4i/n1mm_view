@@ -29,7 +29,17 @@ case "$EVENT" in
     "$VESTA" New Operator "$N1MMV_CURRENT_OPERATOR" "QSOs:${N1MMV_OPERATOR_QSO_COUNT}"
     ;;
   new_multiplier)
-    "$VESTA" New Multiplier Zone "$N1MMV_NEW_MULTIPLIER" "QSOs:${N1MMV_QSO_COUNT}"
+    # A QSO can bring in a new zone, a new country, or both (one event).
+    # The band is included since CQ WW counts each mult once per band. Wraps
+    # on the 15-wide board as e.g. "New Zone 5 20M" / "Country VP2M" / "QSOs:53".
+    ZONE="$N1MMV_NEW_MULTIPLIER" COUNTRY="$N1MMV_NEW_COUNTRY" BAND="$N1MMV_BAND"
+    if [ -n "$ZONE" ] && [ -n "$COUNTRY" ]; then
+      "$VESTA" New Zone "$ZONE" "$BAND" Country "$COUNTRY" "QSOs:${N1MMV_QSO_COUNT}"
+    elif [ -n "$ZONE" ]; then
+      "$VESTA" New Zone "$ZONE" "$BAND" "QSOs:${N1MMV_QSO_COUNT}"
+    else
+      "$VESTA" New Country "$COUNTRY" "$BAND" "QSOs:${N1MMV_QSO_COUNT}"
+    fi
     ;;
   *)
     # Not an event we post to the board; ignore quietly.

@@ -484,13 +484,15 @@ def _exclude_clause(cursor, prefix=' WHERE '):
 # Maps a config.MULTS mode to the qso_log column that stores that multiplier's
 # value. Used by the event-hook "new multiplier" detection. The values here are
 # a fixed whitelist -- never user input -- so interpolating them into SQL below
-# is safe.
+# is safe. COUNTRIES is not a MULTS mode; it is the DXCC country multiplier
+# that DX contests (CQ WW) score alongside the MULTS one.
 _MULT_COLUMN = {
     'SECTIONS': 'section',
     'STATES': 'state',
     'ITUZONES': 'ituzone',
     'CQZONES': 'cqzone',
     'GRID': 'grid',
+    'COUNTRIES': 'country',
 }
 
 

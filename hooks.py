@@ -4,7 +4,9 @@ n1mm_view event hooks
 
 Fire user-supplied external scripts when notable contest events occur:
 
-    new_multiplier   -- a multiplier value was worked for the first time
+    new_multiplier   -- a multiplier value (or, with SHOW_COUNTRIES, a DXCC
+                        country) was worked for the first time -- per band
+                        when MULT_PER_BAND is set
     operator_change  -- the operator at a station changed
     band_change      -- a station moved to a different band
 
@@ -135,7 +137,11 @@ class EventHooks:
             self._last[station] = {'operator': fields.get('operator'),
                                    'band': fields.get('band')}
 
-            if fields.get('mult_is_new') and fields.get('mult_value'):
+            # One event per QSO even when it brings in both a new zone and a
+            # new country, so the board gets a single combined message.
+            new_mult = bool(fields.get('mult_is_new') and fields.get('mult_value'))
+            new_country = bool(fields.get('country_is_new') and fields.get('country'))
+            if new_mult or new_country:
                 self.fire('new_multiplier', fields)
         except Exception:
             logging.exception('event hook on_contact failed')
@@ -174,8 +180,12 @@ class EventHooks:
         put('EXCHANGE', f.get('exchange', ''))
         put('MULT_TYPE', f.get('mult_type', ''))
         put('MULT_NAME', f.get('mult_name', ''))
-        put('NEW_MULTIPLIER', f.get('mult_value', ''))
+        # Only the values that are actually new: a QSO can bring in a new
+        # country on an already-worked zone, or vice versa.
+        put('NEW_MULTIPLIER', f.get('mult_value', '') if f.get('mult_is_new') else '')
         put('MULT_COUNT', f.get('mult_count', ''))
+        put('COUNTRY', f.get('country', ''))
+        put('NEW_COUNTRY', f.get('country', '') if f.get('country_is_new') else '')
         put('QSO_COUNT', f.get('qso_count', ''))
         put('OPERATOR_QSO_COUNT', f.get('operator_qso_count', ''))
         return env
