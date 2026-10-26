@@ -145,6 +145,10 @@ SHOW_COUNTRIES = False
 # multiplier column follows MULTS; a Countries column is added when
 # SHOW_COUNTRIES is True.
 SHOW_MULTS_BY_BAND = False
+# World map of DXCC countries worked, shaded by QSO count. Outlines come from
+# shapes/dxcc/world_dxcc.geojson (GPL-3 data, see shapes/dxcc/README.md);
+# the country of each QSO comes from the logger's <countryprefix>.
+SHOW_COUNTRY_MAP = False
 # IARU HF only: WRTC ("contest within the contest", every four years). ~50 teams
 # get special callsigns issued shortly before the start. This slide shows a
 # worked/total count with a progress bar over the roster of WRTC callsigns,

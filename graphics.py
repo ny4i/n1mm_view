@@ -1970,20 +1970,32 @@ def _load_zone_geometries(path):
     return geometries
 
 
-def draw_map(size, qsos_by_section):
-    """
-    make the choropleth with Cartopy: ARRL section/US-state shapefiles for
-    regional contests, ITU/CQ zone polygons on a world map for the zone modes,
-    or computed Maidenhead grid cells (auto-fit extent) when MULTS=GRID
-    """
-    logging.debug('draw_section map()')
+# Choropleth colour bands shared by the maps: a QSO count is coloured by the
+# first range it fits under; index 0 (no QSOs) means unworked.
+_MAP_RANGES = [0, 1, 2, 10, 20, 50, 100]  # , 500]  # , 1000]
+_MAP_PALETTE = matplotlib.cm.viridis([i / (len(_MAP_RANGES) + 1)
+                                      for i in range(len(_MAP_RANGES) + 1)])
+
+
+def _map_color_index(qsos):
+    """Index into _MAP_PALETTE for a QSO count (0 = unworked)."""
+    idx = 0
+    for range_max in _MAP_RANGES:
+        if range_max == -1 or qsos <= range_max:
+            break
+        idx += 1
+        if idx == len(_MAP_RANGES):
+            break
+    return idx
+
+
+def _start_map(size, view, title):
+    """Create the figure and map axes shared by the choropleth maps: base
+    ocean/lake/land fills, coastlines, the title above the map and the UTC
+    timestamp. Returns (fig, ax, projection)."""
     width_inches = size[0] / 100.0
     height_inches = size[1] / 100.0
     fig = plt.Figure(figsize=(width_inches, height_inches), dpi=100, facecolor='black')
-
-    view = MAP_VIEWS.get(config.MULTS, MAP_VIEWS['DEFAULT'])
-    zone_geometries = _load_zone_geometries(ZONE_GEOJSON[config.MULTS]) \
-        if config.MULTS in ZONE_GEOJSON else None
 
     projection = ccrs.PlateCarree()
     # Reserve the top tenth of the image for the title so it never lands on the
@@ -2001,27 +2013,123 @@ def draw_map(size, qsos_by_section):
     ax.add_feature(cfeature.LAND.with_scale('110m'), color=MAP_LAND_COLOR)
 
     ax.coastlines(view['coastline'])
-    fig.text(0.5, 0.99, get_mult_title(), ha='center', va='top',
+    fig.text(0.5, 0.99, title, ha='center', va='top',
              color='white', size=48, weight='bold')
-    
+
     ax.text(0.83, 0, datetime.datetime.utcnow().strftime("%d %b %Y %H:%M %Zz"),
             transform=ax.transAxes, style='italic', size=14, color='white')
-    ranges = [0, 1, 2, 10, 20, 50, 100]  # , 500]  # , 1000]
-    num_colors = len(ranges)
-    # color_palette = matplotlib.cm.viridis(np.linspace(0.33, 1, num_colors + 1))
-    delta = 1 / (num_colors + 1)
-    colors = [delta * i for i in range(num_colors+1)]
-    color_palette = matplotlib.cm.viridis(colors)
+    return fig, ax, projection
 
-    def color_index_for(qsos):
-        idx = 0
-        for range_max in ranges:
-            if range_max == -1 or qsos <= range_max:
-                break
-            idx += 1
-            if idx == num_colors:
-                break
-        return idx
+
+def _finish_map(fig, ax):
+    """Add the day/night terminator and QTH marker, then render the figure.
+    Returns (raw_data, size)."""
+    # show terminator (day/night shading). Opacity is configurable so the night
+    # side can be lightened -- alpha=0.5 washed the map out very dark.
+    date = datetime.datetime.utcnow()  # this might have some timezone problems?
+    if config.MAP_TERMINATOR_ALPHA > 0:
+        ax.add_feature(nightshade.Nightshade(date, alpha=config.MAP_TERMINATOR_ALPHA))
+
+    # show QTH marker
+    ax.plot(config.QTH_LONGITUDE, config.QTH_LATITUDE, '.', color='r')
+
+    canvas = agg.FigureCanvasAgg(fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    if image_format == 'ARGB':
+        raw_data = renderer.tostring_argb()
+    else:
+        raw_data = renderer.tostring_rgb()
+
+    fig.clf()
+    plt.close(fig)
+    return raw_data, canvas.get_width_height()
+
+
+# DXCC entity outlines (TR4QT's world_dxcc.geojson, built from world-geojson;
+# GPL-3, see shapes/dxcc/README.md). Each feature is one polygon tagged with
+# the entity's DXCC prefix; an entity is usually several polygons.
+DXCC_GEOJSON = 'shapes/dxcc/world_dxcc.geojson'
+
+# The logger sends CTY.DAT primary prefixes; a few differ from the prefixes the
+# geojson is tagged with. Keys and values are uppercased (lookups are
+# case-insensitive, so 'FO/c' already matches 'FO/C').
+DXCC_MAP_ALIASES = {
+    'HB': 'HB9',    # Switzerland
+    'KL': 'KL7',    # Alaska
+    'IS': 'IS0',    # Sardinia
+    '3W': 'XV',     # Vietnam
+    '3Y/B': '3Y',   # Bouvet
+}
+
+_dxcc_geometry_cache = {}
+
+
+def dxcc_map_key(country):
+    """Geometry key for a logged country prefix: drop CTY.DAT's '*' marker on
+    WAE-only entities (e.g. '*IT9' Sicily), uppercase, then apply the alias
+    table."""
+    key = (country or '').lstrip('*').strip().upper()
+    return DXCC_MAP_ALIASES.get(key, key)
+
+
+def _load_dxcc_geometries(path=DXCC_GEOJSON):
+    """Load and cache the DXCC entity polygons, as {PREFIX: [shapely geometry,
+    ...]} with uppercased prefixes. Returns {} (with a warning) if the file is
+    missing so the map still renders."""
+    if path in _dxcc_geometry_cache:
+        return _dxcc_geometry_cache[path]
+    from shapely.geometry import shape
+    geometries = {}
+    if not os.path.exists(path):
+        logging.warning('DXCC geometry not found: %s', path)
+    else:
+        with open(path) as fh:
+            fc = json.load(fh)
+        for feature in fc.get('features', []):
+            dxcc = str(feature.get('properties', {}).get('dxcc', '')).strip().upper()
+            if dxcc:
+                geometries.setdefault(dxcc, []).append(shape(feature['geometry']))
+    _dxcc_geometry_cache[path] = geometries
+    return geometries
+
+
+def draw_country_map(size, countries):
+    """
+    make the DXCC countries-worked choropleth on a world map. countries is the
+    list of (country, continent, qsos) tuples from dataaccess.get_qsos_by_country.
+    Only worked entities are filled; entities with no outline in the geojson
+    (e.g. the WAE pieces GM/s Shetland, TA1 European Turkey) are skipped.
+    """
+    logging.debug('draw_country_map()')
+    geometries = _load_dxcc_geometries()
+    fig, ax, projection = _start_map(size, _WORLD_VIEW, 'Countries Worked')
+
+    for country, _continent, qsos in countries or []:
+        polygons = geometries.get(dxcc_map_key(country))
+        if not polygons:
+            logging.debug('no map outline for country %s, skipping', country)
+            continue
+        color = _MAP_PALETTE[_map_color_index(qsos) or 1]
+        ax.add_geometries(polygons, projection, linewidth=0.5, edgecolor='w', facecolor=color)
+
+    raw_data, canvas_size = _finish_map(fig, ax)
+    logging.debug('draw_country_map() done')
+    return raw_data, canvas_size
+
+
+def draw_map(size, qsos_by_section):
+    """
+    make the choropleth with Cartopy: ARRL section/US-state shapefiles for
+    regional contests, ITU/CQ zone polygons on a world map for the zone modes,
+    or computed Maidenhead grid cells (auto-fit extent) when MULTS=GRID
+    """
+    logging.debug('draw_section map()')
+    view = MAP_VIEWS.get(config.MULTS, MAP_VIEWS['DEFAULT'])
+    zone_geometries = _load_zone_geometries(ZONE_GEOJSON[config.MULTS]) \
+        if config.MULTS in ZONE_GEOJSON else None
+
+    fig, ax, projection = _start_map(size, view, get_mult_title())
 
     if config.MULTS == 'GRID':
         # Maidenhead grids: no fixed geometry file -- compute each worked grid's
@@ -2035,9 +2143,9 @@ def draw_map(size, qsos_by_section):
             if bbox is None:
                 logging.warning('unparseable grid %r, skipping', grid_name)
                 continue
-            ci = color_index_for(qsos) or 1  # worked -> at least the first colour
+            ci = _map_color_index(qsos) or 1  # worked -> at least the first colour
             ax.add_geometries([shp_box(*bbox)], projection, linewidth=0.5,
-                              edgecolor='w', facecolor=color_palette[ci])
+                              edgecolor='w', facecolor=_MAP_PALETTE[ci])
             if bounds is None:
                 bounds = list(bbox)
             else:
@@ -2056,15 +2164,8 @@ def draw_map(size, qsos_by_section):
         if qsos is None:
             qsos = 0
 
-        color_index = 0
-        for range_max in ranges:
-            if range_max == -1 or qsos <= range_max:
-                break
-            color_index += 1
-            if color_index == num_colors:
-                break
-
-        section_color = 'k' if color_index == 0 else color_palette[color_index]
+        color_index = _map_color_index(qsos)
+        section_color = 'k' if color_index == 0 else _MAP_PALETTE[color_index]
 
         if zone_geometries is not None:
             # ITU zones: fill polygons come from the shared GeoJSON, one
@@ -2093,25 +2194,6 @@ def draw_map(size, qsos_by_section):
             shape.attributes['name'] = section_name
             ax.add_geometries([shape.geometry], projection, linewidth=0.7, edgecolor="w", facecolor=section_color)
 
-    # show terminator (day/night shading). Opacity is configurable so the night
-    # side can be lightened -- alpha=0.5 washed the map out very dark.
-    date = datetime.datetime.utcnow()  # this might have some timezone problems?
-    if config.MAP_TERMINATOR_ALPHA > 0:
-        ax.add_feature(nightshade.Nightshade(date, alpha=config.MAP_TERMINATOR_ALPHA))
-
-    # show QTH marker
-    ax.plot(config.QTH_LONGITUDE, config.QTH_LATITUDE, '.', color='r')
-
-    canvas = agg.FigureCanvasAgg(fig)
-    canvas.draw()
-    renderer = canvas.get_renderer()
-    if image_format == 'ARGB':
-        raw_data = renderer.tostring_argb()
-    else:
-        raw_data = renderer.tostring_rgb()
-
-    fig.clf()
-    plt.close(fig)
-    canvas_size = canvas.get_width_height()
+    raw_data, canvas_size = _finish_map(fig, ax)
     logging.debug('draw_map() done')
     return raw_data, canvas_size

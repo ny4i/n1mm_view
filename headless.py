@@ -162,7 +162,8 @@ def create_images(size, image_dir, last_qso_timestamp):
         qsos_by_hq = dataaccess.get_qsos_by_hq(cursor) if config.SHOW_HQ_STATIONS else {}
 
         # load DXCC countries worked (CQ WW second multiplier)
-        qsos_by_country = dataaccess.get_qsos_by_country(cursor) if config.SHOW_COUNTRIES else []
+        qsos_by_country = dataaccess.get_qsos_by_country(cursor) \
+            if config.SHOW_COUNTRIES or config.SHOW_COUNTRY_MAP else []
 
         # load per-band multiplier counts (CQ WW scores each mult once per band)
         mults_by_band = dataaccess.get_mults_by_band(cursor, config.MULTS, config.SHOW_COUNTRIES) \
@@ -270,6 +271,13 @@ def create_images(size, image_dir, last_qso_timestamp):
             if image_data is not None:
                 filename = makePNGTitle(image_dir, 'hq_stations')
                 graphics.save_image(image_data, image_size, filename)
+        except Exception as e:
+            logging.exception(e)
+
+    if config.SHOW_COUNTRY_MAP:
+        try:
+            image_data, image_size = graphics.draw_country_map(size, qsos_by_country)
+            save_chart(image_dir, 'countries_worked_map', image_data, image_size, size, 'Countries Worked')
         except Exception as e:
             logging.exception(e)
 
@@ -482,6 +490,8 @@ def write_index_html(image_dir):
         slides.append((f'{mult_name} Remaining', 'mults_remaining.png', 'img'))
     if config.SHOW_HQ_STATIONS:
         slides.append(('HQ Stations Worked', 'hq_stations.png', 'img'))
+    if config.SHOW_COUNTRY_MAP:
+        slides.append(('Countries Worked Map', 'countries_worked_map.png', 'img'))
     if config.SHOW_MULTS_BY_BAND:
         slides.append(('Multipliers by Band', 'mults_by_band.png', 'img'))
     if config.SHOW_COUNTRIES:

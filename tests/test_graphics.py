@@ -214,3 +214,31 @@ class TestDrawOperatorLeaderboard:
         result, size = self.draw_operator_leaderboard((800, 600), operators)
         assert result is None
         assert size == (0, 0)
+
+
+class TestDxccMapKey:
+    """Logged CTY.DAT prefixes -> world_dxcc.geojson keys."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from graphics import dxcc_map_key
+        self.key = dxcc_map_key
+
+    def test_plain_prefix_uppercased(self):
+        assert self.key('K') == 'K'
+        assert self.key('vp2m') == 'VP2M'
+
+    def test_wae_marker_stripped(self):
+        assert self.key('*IT9') == 'IT9'
+
+    def test_case_insensitive_suffix(self):
+        assert self.key('FO/c') == 'FO/C'
+
+    def test_aliases(self):
+        assert self.key('HB') == 'HB9'
+        assert self.key('KL') == 'KL7'
+        assert self.key('3Y/b') == '3Y'
+
+    def test_empty(self):
+        assert self.key('') == ''
+        assert self.key(None) == ''

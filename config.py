@@ -235,6 +235,8 @@ class Config(metaclass = Singleton):
         # SHOW_COUNTRIES is on, per band) for contests that count each
         # multiplier once per band, e.g. CQ WW.
         self.SHOW_MULTS_BY_BAND = cfg.getboolean('FEATURES', 'SHOW_MULTS_BY_BAND', fallback=False)
+        # World map of DXCC countries worked (shapes/dxcc/world_dxcc.geojson).
+        self.SHOW_COUNTRY_MAP = cfg.getboolean('FEATURES', 'SHOW_COUNTRY_MAP', fallback=False)
 
         # IARU HF only: WRTC ("World Radiosport Team Championship") is a
         # once-every-four-years "contest within the contest" -- ~50 teams issued
@@ -292,8 +294,8 @@ class Config(metaclass = Singleton):
         if self.EXTERNAL_SLIDES:
             logging.info('External slides: %s', [t for t, _ in self.EXTERNAL_SLIDES])
 
-        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, HQ_STATIONS=%s, COUNTRIES=%s, MULTS_BY_BAND=%s, WRTC=%s, OPERATOR_LEADERBOARD=%s, QSOS_BY_STATION=%s, QSOS_BY_CLASS=%s, QSOS_BY_CATEGORY=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
-                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_HQ_STATIONS, self.SHOW_COUNTRIES, self.SHOW_MULTS_BY_BAND, self.SHOW_WRTC, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_QSOS_BY_STATION, self.SHOW_QSOS_BY_CLASS, self.SHOW_QSOS_BY_CATEGORY, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)
+        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, HQ_STATIONS=%s, COUNTRIES=%s, MULTS_BY_BAND=%s, COUNTRY_MAP=%s, WRTC=%s, OPERATOR_LEADERBOARD=%s, QSOS_BY_STATION=%s, QSOS_BY_CLASS=%s, QSOS_BY_CATEGORY=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
+                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_HQ_STATIONS, self.SHOW_COUNTRIES, self.SHOW_MULTS_BY_BAND, self.SHOW_COUNTRY_MAP, self.SHOW_WRTC, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_QSOS_BY_STATION, self.SHOW_QSOS_BY_CLASS, self.SHOW_QSOS_BY_CATEGORY, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)
 
         # [HOOKS] external event scripts. When a script path is set, the collector
         # runs it (as an argv-list subprocess, never via a shell) on the matching
