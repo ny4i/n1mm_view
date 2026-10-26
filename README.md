@@ -135,6 +135,15 @@ If HTML_DIR is set, the dashboard will create PNG files of all the images.
 
 If HTML_ONLY is selected, then no screen interface is displayed. (Use CTRL-\ to stop dashboard).
 
+## HOWTO
+
+Step-by-step setup guides for specific contest types:
+
+* [CQ Zone contest (CQ WW DX)](howto/cq-zone-contest.md): zone map, countries worked, multipliers by band, per-band alerts
+* [State contest](howto/state-contest.md): state map, states progress and remaining
+
+Every ini option is documented with comments in [n1mm_view.ini.sample](n1mm_view.ini.sample).
+
 ## License:
 
 This software is licensed under the terms of the "Simplified BSD license", see [LICENSE](LICENSE).

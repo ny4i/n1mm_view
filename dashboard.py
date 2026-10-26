@@ -189,11 +189,12 @@ def load_data(size, q, last_qso_timestamp):
             enqueue_image(q, QSO_BANDS_PIE_INDEX, image_data, image_size)
         except Exception as e:
             logging.exception(e)
-        try:
-            image_data, image_size = graphics.qso_modes_graph(size, qso_band_modes)
-            enqueue_image(q, QSO_MODES_PIE_INDEX, image_data, image_size)
-        except Exception as e:
-            logging.exception(e)
+        if config.SHOW_QSOS_BY_MODE:
+            try:
+                image_data, image_size = graphics.qso_modes_graph(size, qso_band_modes)
+                enqueue_image(q, QSO_MODES_PIE_INDEX, image_data, image_size)
+            except Exception as e:
+                logging.exception(e)
         if config.SHOW_QSOS_BY_CLASS:
             try:
                 image_data, image_size = graphics.qso_classes_graph(size, qso_classes)

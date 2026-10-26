@@ -25,6 +25,9 @@ DISPLAY_DWELL_TIME = 6
 DATA_DWELL_TIME = 60
 HEADLESS_DWELL_TIME = 120
 LOG_LEVEL = INFO
+# Log level for noisy third-party libraries (matplotlib, PIL, cartopy, pygame,
+# fiona, shapely, pyproj). Default WARNING keeps their chatter out of the logs.
+;LIB_LOG_LEVEL = WARNING
 LOGO_FILENAME = /home/pi/wfda_logo.png
 # MULTS controls which multiplier set to use for the map display.
 # Valid values:
@@ -121,6 +124,9 @@ BIGGER_FONT = 180
 # Optional display features - set to True to enable
 # Radio Status display showing N1MM radio info
 SHOW_RADIO_INFO = False
+# Radio Status panel in the web page sidebar (live via /api/radio when served
+# from the Pi, PNG fallback for rsync'd copies)
+SHOW_RADIO_SIDEBAR = False
 # Multiplier progress bar showing worked/total mults
 SHOW_MULT_PROGRESS = False
 # Table of remaining unworked multipliers
@@ -161,9 +167,11 @@ SHOW_WRTC = False
 SHOW_OPERATOR_LEADERBOARD = False
 # Base count charts (default True). Turn off the ones that don't apply:
 #   SHOW_QSOS_BY_STATION  - hide when running a single station
+#   SHOW_QSOS_BY_MODE     - hide for single-mode contests (e.g. CQ WW SSB)
 #   SHOW_QSOS_BY_CLASS    - Field Day class; hide for non-FD contests (e.g. IARU)
 #   SHOW_QSOS_BY_CATEGORY - Field Day category; hide for non-FD contests
 SHOW_QSOS_BY_STATION = True
+SHOW_QSOS_BY_MODE = True
 SHOW_QSOS_BY_CLASS = True
 SHOW_QSOS_BY_CATEGORY = True
 # Hide radio_info rows older than this many seconds (clears stale entries
@@ -181,6 +189,12 @@ SHOW_NEW_OPS_ROSTER = False
 # a carousel slide. Reads PRIOR_OPERATORS_DB (built by utils/import_prior_operators.py)
 # and appends the current event as a "live" bar.
 SHOW_NEW_OPS_YOY = False
+
+[DEBUG]
+; Headless normally redraws only when a new QSO has arrived. True forces a
+; redraw every cycle -- handy when testing with replayed/resent QSOs. Leave
+; False for a real contest.
+;SKIP_TIMESTAMP_CHECK = False
 
 [WRTC]
 ; Path to a plain-text file listing the WRTC special callsigns (one per line).

@@ -205,7 +205,6 @@ def create_images(size, image_dir, last_qso_timestamp):
             (lambda: graphics.qso_operators_table(size, qso_operators),     'qso_operators_table',     'Operator Totals'),
             (lambda: graphics.qso_operators_table_all(size, qso_operators), 'qso_operators_table_all', 'All Operator Stats'),
             (lambda: graphics.qso_bands_graph(size, qso_band_modes),        'qso_bands_graph',         'QSOs by Band'),
-            (lambda: graphics.qso_modes_graph(size, qso_band_modes),        'qso_modes_graph',         'QSOs by Mode'),
             (lambda: graphics.qso_rates_graph(size, qsos_per_hour),         'qso_rates_graph',         'QSO Rate Over Time'),
             (lambda: graphics.qso_table(size, qsos),                        'last_qso_table',          'Recent QSOs'),
         ]
@@ -213,6 +212,8 @@ def create_images(size, image_dir, last_qso_timestamp):
         # so no PNG is generated and the slot won't appear in the carousel.
         if config.SHOW_QSOS_BY_STATION:
             count_charts.append((lambda: graphics.qso_stations_graph(size, qso_stations),   'qso_stations_graph',    'QSOs by Station'))
+        if config.SHOW_QSOS_BY_MODE:
+            count_charts.append((lambda: graphics.qso_modes_graph(size, qso_band_modes),    'qso_modes_graph',       'QSOs by Mode'))
         if config.SHOW_QSOS_BY_CLASS:
             count_charts.append((lambda: graphics.qso_classes_graph(size, qso_classes),     'qso_classes_graph',     'QSOs by Class'))
         if config.SHOW_QSOS_BY_CATEGORY:
@@ -473,7 +474,9 @@ def write_index_html(image_dir):
     if config.SHOW_QSOS_BY_STATION:
         slides.append(('QSOs by Station', 'qso_stations_graph.png', 'img'))
     slides.append(('QSOs by Band', 'qso_bands_graph.png', 'img'))
-    slides.append(('QSOs by Mode', 'qso_modes_graph.png', 'img'))
+    # QSOs by Mode is optional (a single-mode contest has only one slice).
+    if config.SHOW_QSOS_BY_MODE:
+        slides.append(('QSOs by Mode', 'qso_modes_graph.png', 'img'))
     # Class/Category are Field Day exchange concepts; optional for other contests.
     if config.SHOW_QSOS_BY_CLASS:
         slides.append(('QSOs by Class', 'qso_classes_graph.png', 'img'))

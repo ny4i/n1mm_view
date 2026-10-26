@@ -252,9 +252,11 @@ class Config(metaclass = Singleton):
 
         # Base count charts. These default ON (opt-out) so existing multi-op/FD
         # setups are unchanged; single-station or non-FD events can hide the ones
-        # that don't apply -- QSOs by Station (one station), and Class/Category
-        # (Field Day exchange concepts, empty for e.g. IARU).
+        # that don't apply -- QSOs by Station (one station), QSOs by Mode
+        # (single-mode contests, e.g. CQ WW SSB), and Class/Category (Field Day
+        # exchange concepts, empty for e.g. IARU).
         self.SHOW_QSOS_BY_STATION = cfg.getboolean('FEATURES', 'SHOW_QSOS_BY_STATION', fallback=True)
+        self.SHOW_QSOS_BY_MODE = cfg.getboolean('FEATURES', 'SHOW_QSOS_BY_MODE', fallback=True)
         self.SHOW_QSOS_BY_CLASS = cfg.getboolean('FEATURES', 'SHOW_QSOS_BY_CLASS', fallback=True)
         self.SHOW_QSOS_BY_CATEGORY = cfg.getboolean('FEATURES', 'SHOW_QSOS_BY_CATEGORY', fallback=True)
 
@@ -294,8 +296,8 @@ class Config(metaclass = Singleton):
         if self.EXTERNAL_SLIDES:
             logging.info('External slides: %s', [t for t, _ in self.EXTERNAL_SLIDES])
 
-        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, HQ_STATIONS=%s, COUNTRIES=%s, MULTS_BY_BAND=%s, COUNTRY_MAP=%s, WRTC=%s, OPERATOR_LEADERBOARD=%s, QSOS_BY_STATION=%s, QSOS_BY_CLASS=%s, QSOS_BY_CATEGORY=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
-                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_HQ_STATIONS, self.SHOW_COUNTRIES, self.SHOW_MULTS_BY_BAND, self.SHOW_COUNTRY_MAP, self.SHOW_WRTC, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_QSOS_BY_STATION, self.SHOW_QSOS_BY_CLASS, self.SHOW_QSOS_BY_CATEGORY, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)
+        logging.info('Feature toggles: RADIO_INFO=%s, RADIO_SIDEBAR=%s, MULT_PROGRESS=%s, MULT_REMAINING=%s, MULT_ALERT=%s, HQ_STATIONS=%s, COUNTRIES=%s, MULTS_BY_BAND=%s, COUNTRY_MAP=%s, WRTC=%s, OPERATOR_LEADERBOARD=%s, QSOS_BY_STATION=%s, QSOS_BY_MODE=%s, QSOS_BY_CLASS=%s, QSOS_BY_CATEGORY=%s, NEW_OPS_RACE=%s, NEW_OPS_ROSTER=%s, NEW_OPS_YOY=%s',
+                     self.SHOW_RADIO_INFO, self.SHOW_RADIO_SIDEBAR, self.SHOW_MULT_PROGRESS, self.SHOW_MULT_REMAINING, self.SHOW_MULT_ALERT, self.SHOW_HQ_STATIONS, self.SHOW_COUNTRIES, self.SHOW_MULTS_BY_BAND, self.SHOW_COUNTRY_MAP, self.SHOW_WRTC, self.SHOW_OPERATOR_LEADERBOARD, self.SHOW_QSOS_BY_STATION, self.SHOW_QSOS_BY_MODE, self.SHOW_QSOS_BY_CLASS, self.SHOW_QSOS_BY_CATEGORY, self.SHOW_NEW_OPS_RACE, self.SHOW_NEW_OPS_ROSTER, self.SHOW_NEW_OPS_YOY)
 
         # [HOOKS] external event scripts. When a script path is set, the collector
         # runs it (as an argv-list subprocess, never via a shell) on the matching
