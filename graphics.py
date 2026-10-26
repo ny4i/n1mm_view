@@ -1986,7 +1986,11 @@ def draw_map(size, qsos_by_section):
         if config.MULTS in ZONE_GEOJSON else None
 
     projection = ccrs.PlateCarree()
-    ax = fig.add_axes([0, 0, 1, 1], projection=projection)
+    # Reserve the top tenth of the image for the title so it never lands on the
+    # map (a world view letterboxes, which put the title over the polar zones).
+    ax = fig.add_axes([0, 0, 1, 0.9], projection=projection)
+    # Sit the letterboxed map directly under the title rather than centred.
+    ax.set_anchor('N')
     ax.set_extent(view['extent'], view['extent_crs'])
     # Pin physical fills to 110m: these features default to scale='auto', which
     # switches to 50m/10m when the extent is zoomed in (e.g. a regional GRID
@@ -1997,8 +2001,8 @@ def draw_map(size, qsos_by_section):
     ax.add_feature(cfeature.LAND.with_scale('110m'), color=MAP_LAND_COLOR)
 
     ax.coastlines(view['coastline'])
-    ax.annotate(get_mult_title(), xy=(0.5, 1), xycoords='axes fraction', ha='center', va='top',
-                color='white', size=48, weight='bold')
+    fig.text(0.5, 0.99, get_mult_title(), ha='center', va='top',
+             color='white', size=48, weight='bold')
     
     ax.text(0.83, 0, datetime.datetime.utcnow().strftime("%d %b %Y %H:%M %Zz"),
             transform=ax.transAxes, style='italic', size=14, color='white')
